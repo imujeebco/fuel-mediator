@@ -100,7 +100,9 @@ final class OdooSalesReader
             'alias_uuids' => self::str($row['alias_uuids'] ?? null),
             'pump_number' => self::int($row['pump_number'] ?? null),
             'nozzle_number' => self::int($row['nozzle_number'] ?? null),
-            'fuel_name' => self::str($row['fuel_name'] ?? null),
+            // FuelPay in PTS mode sends no fuel_name; the physical pump/nozzle then gives the grade (controller config).
+            'fuel_name' => self::str($row['fuel_name'] ?? null)
+                ?? $this->gradeForPump($stationId, self::int($row['pump_number'] ?? null), self::int($row['nozzle_number'] ?? null)),
             'volume' => self::decimal($row['volume'] ?? null, 3) ?? '0.000',
             'amount' => self::decimal($row['amount_sar'] ?? null, 2) ?? '0.00',
             'price' => self::decimal($row['price'] ?? null, 3),
@@ -135,6 +137,21 @@ final class OdooSalesReader
             ['pos_config_id.company_id', '!=', $odooCompanyId],
             ['create_date', '>=', $sinceUtc],
         ]);
+    }
+
+    private function gradeForPump(int $stationId, ?int $pump, ?int $nozzle): ?string
+    {
+        if ($pump === null) {
+            return null;
+        }
+        $name = (new Query($this->db))->select('n.fuel_name')->from(['n' => 'nozzles'])
+            ->innerJoin(['p' => 'pumps'], 'p.id = n.pump_id')
+            ->where(['p.station_id' => $stationId, 'p.pump_number' => $pump, 'p.on_controller' => 1, 'n.on_controller' => 1,
+                // PTS-mode sales carry nozzle 0; treat 0 or missing as nozzle 1 (single-nozzle pumps).
+                'n.nozzle_number' => $nozzle !== null && $nozzle > 0 ? $nozzle : 1])
+            ->scalar();
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     /** @return array{string, int} */

@@ -148,6 +148,17 @@ final class VolumeReconcilerTest extends Unit
         assertSame('2026-10-11 04:12:00', (string) $this->db->createCommand('SELECT cursor_value FROM sync_cursors')->queryScalar());
     }
 
+    /** PTS mode: sales arrive without fuel_name; the grade comes from the controller's nozzle for that pump. */
+    public function testSalesReaderDerivesGradeFromPumpWhenMissing(): void
+    {
+        $row = $this->sale(1, 2, '20.000', '2026-10-11 04:11:00');
+        $row['fuel_name'] = false;
+        $row['nozzle_number'] = 0; // as sent by FuelPay in PTS mode
+        (new OdooSalesReader($this->db, new Clock()))->pull(new FakeOdooReadClient(['pts.terminal.sale' => [$row]]), $this->stationId, 1, 1);
+
+        assertSame('A 95', $this->db->createCommand('SELECT fuel_name FROM odoo_sales')->queryScalar());
+    }
+
     private function snapshot(int $pump, string $total, string $at): void
     {
         $this->db->createCommand()->insert('meter_snapshots', [

@@ -86,14 +86,22 @@ final class FillMatcher
             ->orderBy(['sale_created_at' => SORT_ASC, 'id' => SORT_ASC])
             ->all();
 
-        // Rule 1: transaction number.
+        // Rule 1: same pump and transaction number — independent of grade (PTS-mode sales may lack a fuel name).
         if ($fill['pts_transaction_no'] !== null) {
-            foreach ($candidates as $sale) {
-                if ($sale['pts_transaction_id'] !== null && $sale['pts_transaction_id'] === $fill['pts_transaction_no']
-                    && $sale['pump_number'] === $fill['pump_number']) {
-                    $this->link($stationId, (int) $fill['id'], (int) $sale['id'], 'tx_id', 'confirmed', $result);
-                    return;
-                }
+            $txSale = (new Query($this->db))->select('id')->from('odoo_sales')
+                ->where([
+                    'station_id' => $stationId,
+                    'payment_status' => 'APPROVED',
+                    'match_state' => 'unlinked',
+                    'pump_number' => (int) $fill['pump_number'],
+                    'pts_transaction_id' => $fill['pts_transaction_no'],
+                ])
+                ->andWhere(['>=', 'sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
+                ->andWhere(['<=', 'sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
+                ->orderBy(['sale_created_at' => SORT_ASC])->scalar();
+            if ($txSale !== false && $txSale !== null) {
+                $this->link($stationId, (int) $fill['id'], (int) $txSale, 'tx_id', 'confirmed', $result);
+                return;
             }
         }
 

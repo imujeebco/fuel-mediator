@@ -125,3 +125,17 @@ The user enabled FuelPay PTS mode at Station 11. Collector and sales mirror are 
 - Comparison query: `fuel-scratpad/pts_switch_observation.sql`.
 - Watched: PTS transaction ids on sales, manual-sale share, pump-number accuracy, transaction-id links, duplicates, controller load.
 - First effect: from 19:33 the controller stopped answering the collector (timeout after 10 s, 0 bytes received). The circuit breaker backed off.
+
+### First PTS-mode results (19:35–19:57 local, short sample)
+
+- **Sales:** 97% now carry a PTS transaction number (0% before), and pump numbers are physical.
+- **Matching:** 20 of 22 links are by transaction number (exact).
+- **Volume:**
+  - A 95: 219.45 L dispensed = 219.45 L sold.
+  - Diesel: 332.56 L dispensed = 332.56 L sold.
+  - A 91: +29.4 L, including 2 fills that happened between polls.
+- **Fixes required by PTS mode:**
+  - Sales arrive with no `fuel_name` and `nozzle_number = 0`, so the grade is now derived from the controller's nozzle for that pump.
+  - The transaction-number rule now runs before any grade filter.
+- **`manual_sale` stays true for 92% of sales** even in PTS mode. It means "not authorized by the app", not "no PTS".
+- **Potential duplicate to watch:** pump 18 at 19:44 has a manual APPROVED SAR 50 sale without a transaction number (`aqib`) next to a PENDING PTS sale with tx 11813 (`esaa`).

@@ -93,6 +93,19 @@ final class FillMatcherTest extends Unit
         assertSame(1, $result->salesWithoutFill);
     }
 
+    /** PTS mode: FuelPay sends the transaction number but no fuel name — the tx rule must still link. */
+    public function testTransactionLinkWorksWithoutFuelName(): void
+    {
+        $fill = $this->fill(1, 4887, '69.720', '152.00', '04:50:30');
+        $this->sale(1, '69.720', '152.00', '04:51:00', tx: '4887');
+        $this->db->createCommand()->update('odoo_sales', ['fuel_name' => null])->execute();
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 04:00:00', '2026-10-11 05:00:00');
+
+        assertSame(1, $result->confirmed);
+        assertSame('tx_id', $this->scalar("SELECT method FROM match_links WHERE fill_event_id = $fill"));
+    }
+
     public function testRerunIsIdempotent(): void
     {
         $this->fill(1, 101, '20.000', '43.60', '04:10:00');
