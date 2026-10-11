@@ -1,7 +1,7 @@
 # Progress
 
 ## Current phase
-**Phase 2 — Yii3 foundation: COMPLETE (2026-10-11).** Next: Phase 3a (observe-mode collectors). Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+**Phase 3a — Observe mode: IMPLEMENTED (2026-10-11).** The collector is running live on Station 11 (read-only). Next: first reconciliation results, then Phase 3b. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
 Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
@@ -59,14 +59,36 @@ Current state:
 - The local dev database holds the imported registry: 38 stations, 24 controllers (all disabled), 284 pumps and 261 nozzles.
 - Test results are in `testing.md`.
 
-## Next recommended step
-Phase 3a, observe mode (read-only):
-1. Controller gateway: per-controller lock, and an allow-list restricting collectors to read packets.
-2. Status/totals collector writing `meter_snapshots` and `fill_events`, enabled for Station 11 only.
-3. Odoo reader for `pts.terminal.sale` / `pos.session`.
-4. First volume-level reconciliation report.
+## Phase 3a (2026-10-11)
 
-User input needed: Q15–Q19.
+Live findings:
+- Status reports every fill with a per-pump transaction number. Only the controller's stored report is incomplete.
+- `PumpGetTotals` occupies the pump, so the collector never sends it.
+- Odoo lists pump 21, which the controller does not have.
+
+What was built:
+- PTS gateway: `src/Pts/`. The client uses a read-only packet policy, 8-packet chunking and classified failures, and never retries. Each controller gets its own schema-scoped MySQL lock and circuit breaker. Secrets come from the environment.
+- `controller enable|disable|sync-config|show <backend id>`. Config sync makes the controller authoritative for pumps.
+- `collector:run [--station] [--once] [--max-seconds]`, built on `StatusCollector`, `CollectorRunner` and `LeaseManager`.
+- `odoo:pull-sales [--station] [--lookback-days]`: incremental, read-only mirror of `pts.terminal.sale`.
+- `recon:volume --station --from --to [--grace] [--no-persist]`: dispensed vs sold per pump. Discrepancies are idempotent and raised only when meter coverage is complete.
+- `Decimal` helper (bcmath) for exact litres and money.
+
+Bug found and fixed: the frozen `Clock` (see `testing.md`).
+
+How to operate it locally (Station 11 = Odoo backend 2, mediator station id 3):
+```
+php yii controller sync-config 2
+php yii controller enable 2 --poll-ms=10000
+php yii collector:run                     # long-running; Ctrl+C to stop
+php yii odoo:pull-sales --station=3
+php yii recon:volume --station=3 --from="2026-10-11 07:05" --to="2026-10-11 08:00"
+```
+
+## Next recommended step
+1. Review the first live volume reconciliation for Station 11, then decide which stations to enable next.
+2. Phase 3b: PTS-compatible endpoint and Odoo relay, against mocks first.
+3. Fill-level matching (fill ↔ sale) to locate individual unsold fills.
 
 ## How to resume
 1. Read this file.
