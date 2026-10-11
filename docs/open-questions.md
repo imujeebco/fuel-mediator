@@ -53,3 +53,5 @@ Q1: treated as a probable error; not pursued.
 - Q18: The controller is the source of truth. Odoo lists extra pumps, and only 6–7 pumps actually have transactions on the PTS.
 - Q19: Forward `SetFuelGradesPrices` through the mediator. FuelPay's Odoo URL and PTS URL will both point to the mediator.
 - Polling permission: granted for continuous read-only polling. PTS data must come from PTS directly, not from Odoo.
+
+20. ⚠ The Odoo instance provided (`fuelksa-dev.odoo.com`, db `fuelksa-stage-39597991`) is a **staging copy**. Its newest Station 11 sale is from 2026-10-10 13:11 UTC, and it receives no live sales. The repositories (Odoo-side scripts and config, not FuelPay) point to `https://fuelksa.odoo.com`, which is probably production. Live reconciliation needs: confirmation of the production URL and database name, a read-only user or API key, and explicit approval to read from production.
