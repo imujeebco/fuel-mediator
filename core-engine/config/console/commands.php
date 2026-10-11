@@ -11,4 +11,5 @@ return [
     'collector:run' => Console\CollectorRunCommand::class,
     'odoo:pull-sales' => Console\OdooPullSalesCommand::class,
     'recon:volume' => Console\ReconVolumeCommand::class,
+    'recon:fills' => Console\ReconFillsCommand::class,
 ];
