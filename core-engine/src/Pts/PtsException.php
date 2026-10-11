@@ -27,6 +27,8 @@ final class PtsException extends RuntimeException
         public readonly string $kind,
         string $message,
         public readonly ?int $httpStatus = null,
+        /** False when the request provably never reached the controller (safe to report as "not executed"). */
+        public readonly bool $requestMayHaveBeenSent = true,
     ) {
         parent::__construct($message);
     }

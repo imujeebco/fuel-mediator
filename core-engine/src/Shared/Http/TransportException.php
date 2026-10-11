@@ -15,6 +15,8 @@ final class TransportException extends RuntimeException
         string $message,
         public readonly bool $isTimeout,
         public readonly int $latencyMs = 0,
+        /** False only when the request provably never left this host (DNS failure, connection refused). */
+        public readonly bool $requestMayHaveBeenSent = true,
     ) {
         parent::__construct($message);
     }

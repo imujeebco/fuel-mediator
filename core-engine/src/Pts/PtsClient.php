@@ -91,7 +91,11 @@ final class PtsClient
                 ),
             );
         } catch (TransportException $e) {
-            throw new PtsException($e->isTimeout ? PtsException::TIMEOUT : PtsException::TRANSPORT, $e->getMessage());
+            throw new PtsException(
+                $e->isTimeout ? PtsException::TIMEOUT : PtsException::TRANSPORT,
+                $e->getMessage(),
+                requestMayHaveBeenSent: $e->requestMayHaveBeenSent,
+            );
         }
 
         if ($result->status === 401 || $result->status === 403) {

@@ -51,6 +51,23 @@ final class ControllerRepository
     }
 
     /**
+     * Controller serving the PTS-compatible endpoint for an Odoo backend config. Only controllers that Odoo treats as
+     * active (a PTS station, decision D14) on an active station are served; the collector `enabled` flag is separate.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function rowByOdooBackendId(int $odooBackendConfigId): ?array
+    {
+        /** @var array<string, mixed>|null */
+        return (new Query($this->db))
+            ->select(['c.*', 'utc_offset_minutes' => 's.utc_offset_minutes'])
+            ->from(['c' => 'controllers'])
+            ->innerJoin(['s' => 'stations'], 's.id = c.station_id')
+            ->where(['c.odoo_backend_config_id' => $odooBackendConfigId, 'c.odoo_active' => 1, 's.active' => 1])
+            ->one();
+    }
+
+    /**
      * @param array<string, mixed> $row A controllers row joined with `utc_offset_minutes`.
      *
      * @throws PtsException When the controller has no URL or its secret is missing.

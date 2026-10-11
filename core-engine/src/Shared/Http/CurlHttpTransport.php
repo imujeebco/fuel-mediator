@@ -12,6 +12,7 @@ use function curl_getinfo;
 use function curl_init;
 use function curl_setopt_array;
 use function hrtime;
+use function in_array;
 use function is_string;
 use function sprintf;
 
@@ -67,6 +68,7 @@ final class CurlHttpTransport implements HttpTransportInterface
                 sprintf('HTTP transport error %d: %s', $errno, $error),
                 isTimeout: $errno === CURLE_OPERATION_TIMEDOUT,
                 latencyMs: $latencyMs,
+                requestMayHaveBeenSent: !in_array($errno, [CURLE_COULDNT_RESOLVE_HOST, CURLE_COULDNT_CONNECT, CURLE_UNSUPPORTED_PROTOCOL], true),
             );
         }
 

@@ -56,6 +56,21 @@ final class StatusCollector
             throw new PtsException(PtsException::CONFIGURATION, 'No pumps on controller; run pts:sync-config first.');
         }
 
+        return $this->collectPumps($controller, $pumpNumbers)[0];
+    }
+
+    /**
+     * Polls the given pumps (also used when a device asks for status that is not fresh in the cache), so every
+     * status read — collector or device — feeds fill detection.
+     *
+     * @param list<int> $pumpNumbers
+     *
+     * @throws PtsException
+     *
+     * @return array{CollectResult, list<array<string, mixed>|null>} Result and the raw reply packets in pump order.
+     */
+    public function collectPumps(ControllerEndpoint $controller, array $pumpNumbers): array
+    {
         $packets = array_map(static fn(int $pump): array => ['Type' => 'PumpGetStatus', 'Data' => ['Pump' => $pump]], $pumpNumbers);
         $replies = $this->pts->send($controller, $packets, PacketPolicy::READ_ONLY);
         $now = $this->clock->now();
@@ -67,7 +82,7 @@ final class StatusCollector
             $this->db->transaction(fn() => $this->applyStatus($controller, $status, $raw, $now, $result));
         }
 
-        return $result;
+        return [$result, $replies];
     }
 
     /**

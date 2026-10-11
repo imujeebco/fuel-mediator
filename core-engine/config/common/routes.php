@@ -18,6 +18,10 @@ return [
             Route::get('/health/stations')
                 ->action(Web\Health\StationsHealthAction::class)
                 ->name('health/stations'),
+            // PTS-compatible endpoint for FuelPay (docs/api-compatibility-matrix.md §1).
+            Route::post('/stations/{backend:\d+}/jsonPTS')
+                ->action(Web\Pts\JsonPtsAction::class)
+                ->name('pts/jsonpts'),
         ),
 
     // Monitoring UI.
