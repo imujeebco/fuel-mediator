@@ -7,6 +7,8 @@ namespace App\Tests\Unit\Odoo;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PumpsRewriter;
 use App\Odoo\Relay\SaleObserver;
+use App\Odoo\Relay\SettledFillFilter;
+use App\Reconciliation\SettledFills;
 use App\Shared\Clock;
 use App\Shared\Http\HttpResult;
 use App\Shared\Http\TransportException;
@@ -156,6 +158,7 @@ final class OdooRelayTest extends Unit
             new Redactor(),
             new SaleObserver($this->db, $clock, new NullLogger()),
             new PumpsRewriter($this->db, $publicUrl),
+            new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), true),
             $clock,
             new NullLogger(),
             'https://odoo.test',

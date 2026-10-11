@@ -48,6 +48,9 @@ final class Environment
         // Public base URL devices use to reach this mediator (e.g. https://mediator.example.com). Empty = the Odoo
         // relay does not redirect devices' PTS traffic (decision D1 disabled).
         self::setString('MEDIATOR_PUBLIC_URL', '');
+
+        // Decision D21: report fills already paid by another sale as paid to devices. "0" switches it off.
+        self::setString('SETTLED_FILL_FILTER', '1');
     }
 
     /**

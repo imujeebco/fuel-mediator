@@ -30,7 +30,7 @@ use function trim;
  *
  * The device's request body is forwarded verbatim (the device's own credentials, so Odoo stays the authority for
  * permissions) and Odoo's answer is returned verbatim, except for the single REWRITE method. The relay never invents
- * a business result: if Odoo did not answer, the device receives a JSON-RPC error that FuelPay treats as retryable
+ * a business result (except D21: fills already paid by another sale are reported as paid): if Odoo did not answer, the device receives a JSON-RPC error that FuelPay treats as retryable
  * ("timeout", "503"), and FuelPay keeps the sale in its own offline queue.
  */
 final class OdooRelay
@@ -41,6 +41,7 @@ final class OdooRelay
         private readonly Redactor $redactor,
         private readonly SaleObserver $sales,
         private readonly PumpsRewriter $rewriter,
+        private readonly SettledFillFilter $settledFills,
         private readonly Clock $clock,
         private readonly LoggerInterface $logger,
         private readonly string $odooUrl,
@@ -131,6 +132,13 @@ final class OdooRelay
             $rewritten = $this->rewriter->rewrite($response);
             if ($rewritten !== null) {
                 return new RelayResponse(200, json_encode($rewritten, JsonResponder::FLAGS));
+            }
+        }
+
+        if ($mode === RelayPolicy::FILTER && $outcome === 'ok' && $modelMethod !== null) {
+            $filtered = $this->settledFills->apply($modelMethod, $args, $response);
+            if ($filtered !== null) {
+                return new RelayResponse(200, json_encode($filtered, JsonResponder::FLAGS));
             }
         }
 

@@ -15,13 +15,15 @@ final class RelayPolicy
     public const PASS = 'pass';
     public const JOURNAL = 'journal';
     public const REWRITE = 'rewrite';
+    /** Forwarded; Odoo's answer may be adjusted for fills already paid by another sale (D21, SettledFillFilter). */
+    public const FILTER = 'filter';
 
     /** @var array<string, array<string, string>> model => method => mode */
     private const OBJECT_METHODS = [
         'pos.config' => [
             'pts_api_bootstrap_proxy' => self::PASS, 'mobile_get_price_version' => self::PASS,
-            'mobile_get_paid_fills' => self::PASS, 'mobile_get_unpaid_fills' => self::PASS,
-            'mobile_is_fill_paid' => self::PASS, 'mobile_list_employees' => self::PASS, 'mobile_fuel_tanks' => self::PASS,
+            'mobile_get_paid_fills' => self::FILTER, 'mobile_get_unpaid_fills' => self::FILTER,
+            'mobile_is_fill_paid' => self::FILTER, 'mobile_list_employees' => self::PASS, 'mobile_fuel_tanks' => self::PASS,
         ],
         'pts.backend.config' => [
             'register_terminal_sale' => self::JOURNAL, 'register_terminal_sales_bulk' => self::JOURNAL,

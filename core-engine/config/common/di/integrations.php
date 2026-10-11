@@ -7,6 +7,7 @@ use App\Odoo\JsonRpcOdooReadClient;
 use App\Odoo\OdooReadClientInterface;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PumpsRewriter;
+use App\Odoo\Relay\SettledFillFilter;
 use App\Shared\Http\CurlHttpTransport;
 use App\Shared\Http\HttpTransportInterface;
 
@@ -19,6 +20,11 @@ return [
 
     PumpsRewriter::class => [
         '__construct()' => ['publicUrl' => (string) Environment::get('MEDIATOR_PUBLIC_URL')],
+    ],
+
+    // D21: on unless SETTLED_FILL_FILTER=0 (kill switch: devices then see Odoo's unpaid list unchanged).
+    SettledFillFilter::class => [
+        '__construct()' => ['enabled' => (string) Environment::get('SETTLED_FILL_FILTER') !== '0'],
     ],
 
     OdooReadClientInterface::class => static fn(HttpTransportInterface $transport): JsonRpcOdooReadClient
