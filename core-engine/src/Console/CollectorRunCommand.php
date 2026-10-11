@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console;
 
 use App\Collector\CollectorRunner;
+use App\Pts\Endpoint\CommandResolver;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -23,8 +24,11 @@ use function usleep;
 )]
 final class CollectorRunCommand extends Command
 {
+    private const RESOLVE_EVERY_SECONDS = 30;
+
     public function __construct(
         private readonly CollectorRunner $runner,
+        private readonly CommandResolver $resolver,
     ) {
         parent::__construct();
     }
@@ -57,8 +61,17 @@ final class CollectorRunCommand extends Command
             }
         }
 
+        $lastResolve = 0.0;
         try {
             do {
+                // Unknown command outcomes are resolved from the evidence the collector just gathered.
+                if (hrtime(true) / 1e9 - $lastResolve >= self::RESOLVE_EVERY_SECONDS) {
+                    $lastResolve = hrtime(true) / 1e9;
+                    $resolved = array_filter($this->resolver->resolve());
+                    if ($resolved !== []) {
+                        $output->writeln('commands resolved ' . (json_encode($resolved) ?: '{}'));
+                    }
+                }
                 $outcomes = $this->runner->runOnce($stationIds, ignoreInterval: $once);
                 foreach ($outcomes as $controllerId => $outcome) {
                     $output->writeln(

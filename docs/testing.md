@@ -16,10 +16,10 @@ Framework: Codeception 5 (Unit / Functional / Console suites) and Psalm, in `cor
 | 4 | Concurrent requests for the same pump | 4 | **partial pass (2026-10-11)**: a command is not sent while another process holds the controller lock (`PtsEndpointTest::testCommandIsNotSentWhenControllerIsBusy`) |
 | 5 | Duplicate submission of the same request | 4 | **passed (2026-10-11)**: an identical authorize within 10 s is replayed, not re-sent; stops are never de-duplicated (`PtsEndpointTest`) |
 | 6 | PTS timeout after authorize | 4 | **passed (2026-10-11)**: the command is sent once and becomes `outcome_unknown` with a "check the pump" reply (`PtsEndpointTest`). Resolution from evidence comes in Phase 4. |
-| 7 | Dispense succeeded, response lost | 4 | not run |
+| 7 | Dispense succeeded, response lost | 4 | **passed (2026-10-11)**: an `outcome_unknown` authorize followed by a fill on the pump resolves to `resolved_executed` (`CommandResolverTest`) |
 | 8 | Manual sale followed by delayed PTS transaction | 5 | **passed (2026-10-11)**: a second identical sale for one fill becomes `duplicate_candidate` (high severity when a card is involved); sales are never changed (`FillMatcherTest`) |
 | 9 | Odoo unavailable during completed sale | 3b | **passed (2026-10-11)**: the relay returns a retryable "timeout" error, never a fabricated result, and the attempt is kept in `sale_observations` (`OdooRelayTest`) |
-| 10 | Mediator restart with pending transactions | 4 | not run |
+| 10 | Mediator restart with pending transactions | 4 | **passed (2026-10-11)**: a command left `sent` becomes `outcome_unknown` and one left `queued` becomes `failed`; nothing is re-sent (`CommandResolverTest`). Lease takeover is covered in `CollectorRunnerTest`. |
 | 11 | Database transaction rollback | 2 | **passed (2026-10-11)**: `StationImporterTest::testFailureRollsBackTheWholeImport` |
 | 12 | Duplicate Odoo synchronization attempts | 3b / 5 | **passed (2026-10-11)**: the same uuid is forwarded for Odoo's upsert and both attempts are traced (`OdooRelayTest`) |
 | 13 | Digital payment timeout, unknown outcome | 5 | not run |
