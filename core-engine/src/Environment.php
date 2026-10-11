@@ -44,6 +44,10 @@ final class Environment
         self::setString('ODOO_PASSWORD', '');
 
         self::setInteger('RETENTION_DAYS', 90);
+
+        // Public base URL devices use to reach this mediator (e.g. https://mediator.example.com). Empty = the Odoo
+        // relay does not redirect devices' PTS traffic (decision D1 disabled).
+        self::setString('MEDIATOR_PUBLIC_URL', '');
     }
 
     /**

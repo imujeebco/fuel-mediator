@@ -22,6 +22,10 @@ return [
             Route::post('/stations/{backend:\d+}/jsonPTS')
                 ->action(Web\Pts\JsonPtsAction::class)
                 ->name('pts/jsonpts'),
+            // Odoo-compatible relay for FuelPay (docs/api-compatibility-matrix.md §2).
+            Route::post('/odoo/jsonrpc')
+                ->action(Web\Odoo\JsonRpcRelayAction::class)
+                ->name('odoo/jsonrpc'),
         ),
 
     // Monitoring UI.
