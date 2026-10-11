@@ -34,3 +34,6 @@ Dont know but proceed
 **Status (2026-10-11):** answers above are recorded as decisions D1, D9–D12 in [decisions.md](decisions.md).
 Still open: Q10 (Digital Pay SDK status query; the user has the SDK if needed), Q11 (WebSocket upload, deferred until after tests) and Q14.
 Q1: treated as a probable error; not pursued.
+
+15. Are FuelPay devices at Station 11 (and others) running with PTS switched off (manual entry)? Evidence: 100% `manual_sale`, no PTS tx ids, meter events `source=manual`. See [discovery/reconciliation-feasibility.md](discovery/reconciliation-feasibility.md).
+16. Why does the PTS controller record only a small fraction of fills as transactions (e.g. 29 vs 1,415 on 2026-10-09)? Pump standalone/auto-authorize mode or a configuration issue?
