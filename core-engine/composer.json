@@ -34,7 +34,11 @@
     },
     "require": {
         "php": "8.2 - 8.5",
+        "ext-bcmath": "*",
+        "ext-curl": "*",
         "ext-filter": "*",
+        "ext-json": "*",
+        "ext-pdo_mysql": "*",
         "httpsoft/http-message": "^1.1.6",
         "psr/container": "^2.0.2",
         "psr/http-factory": "^1.1",
