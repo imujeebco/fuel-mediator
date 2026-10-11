@@ -103,3 +103,19 @@ Fill-level matching:
 - 15 confirmed links, 1 probable. Sales typically arrive 10–60 s after the fill ends.
 - Diesel: a 64.25 L fill (SAR 115.00) pairs with a SAR 120.00 sale registered 3 minutes before the fill ended. This is a likely mis-recorded amount.
 - An A 91 pump-18 fill (SAR 50.00, 07:26:41) had no sale after 10 minutes.
+
+### Full hour 07:05–08:05 local (after fixing window attribution)
+
+Sales linked to a fill now count in the fill's window. Before the fix, three A 95 sales registered after 08:05 for fills ending after 08:05 made the window look 147.6 L oversold.
+
+| Grade | Fills | Dispensed L | Sales | Sold L | Gap L |
+|---|---|---|---|---|---|
+| A 91 | 21 | 572.050 | 17 | 516.975 | **+55.075 unsold** |
+| A 95 | 13 | 586.260 | 13 | 586.265 | −0.005 |
+| Diesel | 2 | 92.180 | 2 | 94.972 | −2.792 |
+
+- Missed fills between polls: 0. Meter coverage: complete.
+- Open discrepancies (grace 30 min):
+  - A 91 pump 18, 22.94 L / SAR 50.00 at 07:26:41: no sale.
+  - A 91 pump 3, 9.19 L / SAR 20.03 at 07:41:36: no sale.
+  - Diesel pump 13, 64.25 L / SAR 115.00, recorded as a SAR 120.00 sale (amount mismatch).

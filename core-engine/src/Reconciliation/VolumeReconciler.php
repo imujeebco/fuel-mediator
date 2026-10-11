@@ -7,7 +7,6 @@ namespace App\Reconciliation;
 use App\Shared\Clock;
 use App\Shared\Decimal;
 use App\Shared\Http\JsonResponder;
-use DateTimeImmutable;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Query\Query;
 
@@ -22,7 +21,9 @@ use function sprintf;
  * litres sold in Odoo, for one station and window.
  *
  *   dispensed = Σ fill volume (fills ending in window) + Σ volume of fills missed between polls (tx/meter gaps)
- *   sold      = Σ volume of APPROVED Odoo sales attributed to the station (by POS company) in [from, to + grace]
+ *   sold      = Σ volume of APPROVED Odoo sales attributed to the station (by POS company): sales linked to a fill
+ *               (FillMatcher) count in their fill's window, unlinked sales by their creation time. Run the matcher first;
+ *               `$graceMinutes` is reported only (the matcher owns the registration grace).
  *
  * Grouping:
  *  - BY_GRADE (default): per fuel grade. With PTS off on the devices, the pump number on a manual sale is effectively
@@ -58,7 +59,6 @@ final class VolumeReconciler
         bool $persist = true,
         string $groupBy = self::BY_GRADE,
     ): VolumeReport {
-        $salesTo = (new DateTimeImmutable($toUtc . ' UTC'))->modify("+{$graceMinutes} minutes")->format('Y-m-d H:i:s.v');
         $report = new VolumeReport($stationId, $fromUtc, $toUtc, $graceMinutes, $groupBy);
 
         /** @var list<array{controller_id: string, pump_number: string, fuel_name: ?string}> $pumps */
@@ -108,17 +108,35 @@ final class VolumeReconciler
                     ->andWhere(['<=', 'observed_at', $fromUtc])->exists();
             }
 
-            $sales = (new Query($this->db))->select(['n' => 'COUNT(*)', 'volume' => 'SUM(volume)', 'amount' => 'SUM(amount)'])
-                ->from('odoo_sales')
-                ->where(['station_id' => $stationId, 'payment_status' => 'APPROVED'])
-                ->andWhere(['>=', 'sale_created_at', $fromUtc])->andWhere(['<', 'sale_created_at', $salesTo]);
+            // Sales linked to a fill count in the fill's window (late registration is not penalised); unlinked sales
+            // count by their own creation time within the window (docs/transaction-lifecycle.md §6.1).
+            $linked = (new Query($this->db))->select(['n' => 'COUNT(*)', 'volume' => 'SUM(s.volume)', 'amount' => 'SUM(s.amount)'])
+                ->from(['s' => 'odoo_sales'])
+                ->innerJoin(['ml' => 'match_links'], 'ml.odoo_sale_id = s.id')
+                ->innerJoin(['f' => 'fill_events'], 'f.id = ml.fill_event_id')
+                ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED'])
+                ->andWhere(['>=', 'f.ended_at', $fromUtc])->andWhere(['<', 'f.ended_at', $toUtc]);
+            $unlinked = (new Query($this->db))->select(['n' => 'COUNT(*)', 'volume' => 'SUM(s.volume)', 'amount' => 'SUM(s.amount)'])
+                ->from(['s' => 'odoo_sales'])
+                ->leftJoin(['ml' => 'match_links'], 'ml.odoo_sale_id = s.id')
+                ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED', 'ml.id' => null])
+                ->andWhere(['>=', 's.sale_created_at', $fromUtc])->andWhere(['<', 's.sale_created_at', $toUtc]);
             if ($groupBy === self::BY_PUMP) {
-                $sales->andWhere(['pump_number' => $group['pump']]);
+                $linked->andWhere(['f.pump_number' => $group['pump']]);
+                $unlinked->andWhere(['s.pump_number' => $group['pump']]);
             } else {
-                $sales->andWhere(['fuel_name' => $group['grade']]);
+                $linked->andWhere(['f.fuel_name' => $group['grade']]);
+                $unlinked->andWhere(['s.fuel_name' => $group['grade']]);
             }
-            /** @var array{n: string, volume: ?string, amount: ?string} $sold */
-            $sold = $sales->one();
+            /** @var array{n: string, volume: ?string, amount: ?string} $linkedRow */
+            $linkedRow = $linked->one();
+            /** @var array{n: string, volume: ?string, amount: ?string} $unlinkedRow */
+            $unlinkedRow = $unlinked->one();
+            $sold = [
+                'n' => (int) $linkedRow['n'] + (int) $unlinkedRow['n'],
+                'volume' => Decimal::add(self::dec($linkedRow['volume'] ?? null), self::dec($unlinkedRow['volume'] ?? null)),
+                'amount' => Decimal::add(self::dec($linkedRow['amount'] ?? null, 2), self::dec($unlinkedRow['amount'] ?? null, 2), 2),
+            ];
 
             $dispensed = Decimal::add($fillVolume, $missedVolume);
             $soldVolume = self::dec($sold['volume'] ?? null);
@@ -146,7 +164,7 @@ final class VolumeReconciler
             }
         }
 
-        $this->countUnmatchedSales($report, $stationId, $fromUtc, $salesTo, $groupBy);
+        $this->countUnmatchedSales($report, $stationId, $fromUtc, $toUtc, $groupBy);
 
         if ($persist) {
             $this->db->createCommand()->insert('reconciliation_runs', [
@@ -168,11 +186,11 @@ final class VolumeReconciler
      * Sales the grouping cannot place: grade mode → fuel names the controller does not dispense (non-fuel excluded);
      * pump mode → pump numbers the controller does not have.
      */
-    private function countUnmatchedSales(VolumeReport $report, int $stationId, string $fromUtc, string $salesTo, string $groupBy): void
+    private function countUnmatchedSales(VolumeReport $report, int $stationId, string $fromUtc, string $toUtc, string $groupBy): void
     {
         $query = (new Query($this->db))->select(['n' => 'COUNT(*)', 'volume' => 'SUM(s.volume)'])->from(['s' => 'odoo_sales'])
             ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED'])
-            ->andWhere(['>=', 's.sale_created_at', $fromUtc])->andWhere(['<', 's.sale_created_at', $salesTo])
+            ->andWhere(['>=', 's.sale_created_at', $fromUtc])->andWhere(['<', 's.sale_created_at', $toUtc])
             ->andWhere(['not in', 's.fuel_name', self::NON_FUEL]);
         if ($groupBy === self::BY_PUMP) {
             $query->leftJoin(['p' => 'pumps'], 'p.station_id = s.station_id AND p.pump_number = s.pump_number AND p.on_controller = 1')

@@ -94,6 +94,32 @@ final class VolumeReconcilerTest extends Unit
         assertSame('30.000', $byPump->unplacedSalesVolume);
     }
 
+    /**
+     * Live finding: sales registered after the window for a fill inside it must count there, and sales for fills after
+     * the window must not (otherwise a busy window edge looks "oversold").
+     */
+    public function testLinkedSalesCountInTheirFillWindow(): void
+    {
+        $this->snapshot(2, '500.000', '2026-10-11 03:55:00');
+        $this->snapshot(1, '1000.000', '2026-10-11 03:55:00');
+        $this->fill(2, 7, '45.060', '545.060', '2026-10-11 04:59:30', amount: '98.24');   // inside window, sale arrives after it
+        $this->fill(2, 8, '36.420', '581.480', '2026-10-11 05:02:00', amount: '79.40');   // next window, sale also after window end
+        $this->pullSales([
+            $this->sale(1, 2, '45.064', '2026-10-11 05:00:20'),
+            $this->sale(2, 2, '36.421', '2026-10-11 05:02:15'),
+        ]);
+        (new \App\Reconciliation\FillMatcher($this->db, Clock::fixedAt(new DateTimeImmutable('2026-10-11 06:00:00'))))
+            ->match($this->stationId, '2026-10-11 04:00:00.000', '2026-10-11 06:00:00.000');
+
+        $report = (new VolumeReconciler($this->db, new Clock()))
+            ->reconcile($this->stationId, '2026-10-11 04:00:00.000', '2026-10-11 05:00:00.000', persist: false);
+
+        $a95 = $report->lines[1];
+        assertSame('45.060', $a95->dispensed);
+        assertSame('45.064', $a95->sold);
+        assertSame(false, $a95->flagged);
+    }
+
     /** Manual-mode reality: sales keyed to pump 1 regardless of the pump used are still reconciled by grade. */
     public function testGradeModeReconcilesSalesKeyedToTheWrongPump(): void
     {
@@ -130,12 +156,12 @@ final class VolumeReconcilerTest extends Unit
         ])->execute();
     }
 
-    private function fill(int $pump, int $tx, string $volume, string $meterAfter, string $endedAt, int $missed = 0, ?string $missedVolume = null): void
+    private function fill(int $pump, int $tx, string $volume, string $meterAfter, string $endedAt, int $missed = 0, ?string $missedVolume = null, string $amount = '0.00'): void
     {
         $this->db->createCommand()->insert('fill_events', [
             'station_id' => $this->stationId, 'controller_id' => $this->controllerId, 'pump_number' => $pump,
             'nozzle_number' => 1, 'fuel_name' => $pump === 2 ? 'A 95' : 'A 91', 'pts_transaction_no' => $tx, 'ended_at' => $endedAt, 'volume' => $volume,
-            'amount' => '0.00', 'meter_volume_after' => $meterAfter, 'source' => 'status_transition',
+            'amount' => $amount, 'meter_volume_after' => $meterAfter, 'source' => 'status_transition',
             'preceding_missed_count' => $missed, 'preceding_missed_volume' => $missedVolume,
         ])->execute();
     }
