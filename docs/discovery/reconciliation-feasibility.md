@@ -49,3 +49,23 @@ Window = first to last controller transaction of the day. The meter delta comes 
 
 - **Q15.** Are FuelPay devices at Station 11 (and others) operating with PTS switched off, i.e. in manual entry mode?
 - **Q16.** Why does the controller not record most fills as transactions? Possible causes: pumps in standalone/auto-authorize mode, or a controller configuration issue. This matters for whether fill-level matching can ever be complete.
+
+## Addendum: live status sampling, 2026-10-11 06:41–06:43 (Station 11, read-only)
+
+Script: `fuel-scratpad/phase0/status_sampler.py`. `PumpGetStatus` for all 18 pumps, every 10 s.
+
+1. **Status sees every fill, with a transaction number.**
+   - Pump 9 went `PumpFillingStatus` (`Transaction 4520`, live volume) → `PumpIdleStatus` (`LastTransaction 4520`, `LastVolume 3.25`).
+   - `LastTotalVolume` rose by exactly 3.25 L (238,680.73 → 238,683.98).
+   - So the per-pump transaction counter increments on every fill; only the controller's stored *report* (`ReportGetPumpTransactions`) is incomplete.
+   - **Transaction-number continuity per pump therefore proves completeness.** A jump of `k > 1` means `k − 1` fills happened between polls. Their combined volume is the meter delta minus the last fill's volume.
+2. **Idle packets intermittently omit `LastTotalVolume`.** Pump 1 alternated between present and missing. A missing total means *unknown*; it is never a change and never zero.
+3. **`PumpGetTotals` is asynchronous and occupies the pump.**
+   - It returns only `"Message":"OK"`. An immediate second request fails with `Code 41 JSONPTS_ERROR_PUMP_BUSY_OTHER_REQUEST_EXECUTED`; the result surfaces later in status (`LastReceivedTotal*`).
+   - **The collector must not send it.** It could collide with a worker's authorize. Status `LastTotalVolume` is sufficient, because meters only move during fills.
+4. Pump 19 (present in Odoo) returns `Code 52 JSONPTS_ERROR_PUMP_IS_NOT_CONFIGURED`. This confirms Q18/D15.
+
+**Collector design (Phase 3a), updated:**
+- `PumpGetStatus` only, batched ≤ 8 per request, for pumps present in the controller's own `GetPumpsConfiguration`.
+- A fill event is recorded when an idle status shows a new `LastTransaction`. Missed fills are counted from transaction gaps.
+- A meter snapshot is written when `LastTotalVolume` changes, plus a 5-minute heartbeat to prove coverage.
