@@ -1,7 +1,7 @@
 # Progress
 
 ## Current phase
-**Phase 3a — Observe mode: IMPLEMENTED (2026-10-11).** The collector is running live on Station 11 (read-only). Next: first reconciliation results, then Phase 3b. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+**Phase 3b — Compatibility endpoints: IMPLEMENTED, mock-tested (2026-10-11).** Phase 3a observe mode is running live on Station 11 (read-only). Next: review of the first live reconciliation, then Phase 4. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
 Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
@@ -85,10 +85,34 @@ php yii odoo:pull-sales --station=3
 php yii recon:volume --station=3 --from="2026-10-11 07:05" --to="2026-10-11 08:00"
 ```
 
+## Phase 3b (2026-10-11)
+
+**Fill-level matching** (`recon:fills`):
+- Links fills to sales by transaction number or by amount + volume fingerprint.
+- Reports unmatched fills after a grace period; a late sale resolves them automatically.
+- Also reports sales without a fill and duplicate candidates.
+
+**PTS-compatible endpoint** (`POST /stations/{backend}/jsonPTS`):
+- Status is served from the shared cache, and refreshes feed fill detection.
+- Commands go through `CommandService`. They are journaled and sent once under the controller lock. A timeout becomes `outcome_unknown`, never a retry. A refused connection is reported as "not executed". An identical authorize within 10 s replays the earlier result.
+- Config and probe replies are cached. Unknown pumps and unsupported packet types never reach the controller.
+
+**Odoo relay** (`POST /odoo/jsonrpc`):
+- Allow-list of FuelPay's model/method pairs.
+- Forwards verbatim, maps errors to FuelPay's retryable messages, journals with redaction, and records `sale_observations`.
+- Rewrites the PTS URL in `mobile_get_pumps` when `MEDIATOR_PUBLIC_URL` is set (D1).
+
+New environment setting: `MEDIATOR_PUBLIC_URL`.
+
+**Not done:** no real device has used either endpoint. That requires a pilot device and your approval.
+
 ## Next recommended step
-1. Review the first live volume reconciliation for Station 11, then decide which stations to enable next.
-2. Phase 3b: PTS-compatible endpoint and Odoo relay, against mocks first.
-3. Fill-level matching (fill ↔ sale) to locate individual unsold fills.
+1. Review the first live volume and fill reconciliation for Station 11, then decide which stations to enable next.
+2. Phase 4:
+   - resolve `outcome_unknown` commands from evidence;
+   - outbox and restart recovery;
+   - concurrency tests.
+3. Pilot preparation: point one test device at a mediator instance reachable from the station (needs hosting and approval).
 
 ## How to resume
 1. Read this file.

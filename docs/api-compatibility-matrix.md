@@ -2,7 +2,7 @@
 
 Status: Phase 1 design, 2026-10-11.
 
-Every contract below comes from **client source code** (see [discovery/](discovery/)). None has yet been validated against captured device traffic. A row is marked ✅ only after a test against captured or mock payloads passes.
+Every contract below comes from **client source code** (see [discovery/](discovery/)). None has yet been validated against captured device traffic. A row is marked ✅ only after a test against captured or mock payloads passes. ✅ (mock) means verified against mocks built from captured shapes, but not yet with a real device.
 
 **Handling modes:**
 - **PASS**: forward unchanged and journal the metadata.
@@ -22,14 +22,14 @@ Transport requirements (from `fuelpay-pts-contract.md`):
 
 | Packet type (request) | Mode | Mediator behaviour | Validation |
 |---|---|---|---|
-| `PumpGetStatus` | CACHE | Serve from `pump_status_cache` if younger than `freshness_ms` (1500). Otherwise refresh through the gateway. If the controller is down, serve a snapshot only if it is younger than `stale_ms` (5000), else omit the packet. | pending |
+| `PumpGetStatus` | CACHE | Serve from `pump_status_cache` if younger than `freshness_ms` (1500). Otherwise refresh through the gateway. If the controller is down, serve a snapshot only if it is younger than `stale_ms` (5000), else omit the packet. | ✅ (mock) |
 | `GetPumpsConfiguration`, `GetPumpNozzlesConfiguration`, `GetFuelGradesConfiguration` | CACHE (TTL 60 s) | Same keys as the controller. Fuel grades include both `Id/Name` and `FuelGradeId/FuelGradeName/Price`. | pending |
 | `ProbeGetMeasurements` | CACHE (TTL 30 s) | Pass the controller's error packet through when no probes exist (Station 11 has none). | pending |
 | `PumpGetTotals` | CACHE (TTL 5 s) / forward | Also stored as `meter_snapshots` (source `device_totals`). | pending |
-| `PumpAuthorize` | QUEUE | Journal → queue → send once. Return confirmation or error verbatim. Timeout → `OUTCOME_UNKNOWN` error packet, **never re-sent**. Identical authorize within 10 s returns the journaled result. | pending |
-| `PumpStop`, `PumpEmergencyStop` | QUEUE (priority) | Jumps the queue. Never coalesced or deduplicated: each stop is sent. Timeout → `OUTCOME_UNKNOWN`, reported immediately. | pending |
-| `PumpSuspend`, `PumpResume` | QUEUE | As for authorize, without the idempotency window. | pending |
-| `SetFuelGradesPrices` | QUEUE | Forwarded to the controller and journaled as a command (D16). | pending |
+| `PumpAuthorize` | QUEUE | Journal → queue → send once. Return confirmation or error verbatim. Timeout → `OUTCOME_UNKNOWN` error packet, **never re-sent**. Identical authorize within 10 s returns the journaled result. | ✅ (mock) |
+| `PumpStop`, `PumpEmergencyStop` | QUEUE (priority) | Jumps the queue. Never coalesced or deduplicated: each stop is sent. Timeout → `OUTCOME_UNKNOWN`, reported immediately. | ✅ (mock) |
+| `PumpSuspend`, `PumpResume` | QUEUE | As for authorize, without the idempotency window. | ✅ (mock) |
+| `SetFuelGradesPrices` | QUEUE | Forwarded to the controller and journaled as a command (D16). | ✅ (mock) |
 | Any other type | DENY | Error packet `"Error":"Not supported by mediator"` | — |
 
 ## 2. Odoo-compatible relay: `POST /odoo/jsonrpc`
