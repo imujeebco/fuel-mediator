@@ -29,7 +29,7 @@ Transport requirements (from `fuelpay-pts-contract.md`):
 | `PumpAuthorize` | QUEUE | Journal → queue → send once. Return confirmation or error verbatim. Timeout → `OUTCOME_UNKNOWN` error packet, **never re-sent**. Identical authorize within 10 s returns the journaled result. | pending |
 | `PumpStop`, `PumpEmergencyStop` | QUEUE (priority) | Jumps the queue. Never coalesced or deduplicated: each stop is sent. Timeout → `OUTCOME_UNKNOWN`, reported immediately. | pending |
 | `PumpSuspend`, `PumpResume` | QUEUE | As for authorize, without the idempotency window. | pending |
-| `SetFuelGradesPrices` | DENY (initially) | Price changes stay with Odoo's price push, so device price pushes are not forwarded. **Needs your confirmation**: FuelPay's price list screen sends this today. | decision needed |
+| `SetFuelGradesPrices` | QUEUE | Forwarded to the controller and journaled as a command (D16). | pending |
 | Any other type | DENY | Error packet `"Error":"Not supported by mediator"` | — |
 
 ## 2. Odoo-compatible relay: `POST /odoo/jsonrpc`

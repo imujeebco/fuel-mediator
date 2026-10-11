@@ -14,6 +14,11 @@
 | D10 | Session-close discrepancies: no blocking. The mediator provides a consolidated reconciliation report per station/session (Q7). It recognises the current practice of parking balance entries and placing 1–2 balancing orders in a new session (Q6). | **Accepted** | 2026-10-11 |
 | D11 | Production target: Ubuntu Linux on a Contabo server (Q12). Journal/audit retention 3 months, configurable (Q13). | **Accepted** | 2026-10-11 |
 | D12 | Sizing assumption: 4–6 Android payment terminals per station at peak (Q9) | **Accepted** | 2026-10-11 |
+| D13 | Continuous read-only polling of controllers is permitted. All PTS data (status, meters, configuration, transactions) is read from the controller directly, never via Odoo. | **Accepted** | 2026-10-11 |
+| D14 | Station mode: a backend config with Active = false means non-PTS (Q17). This is already how `station:import` works. | **Accepted** | 2026-10-11 |
+| D15 | The pump/nozzle registry follows the controller's own configuration (Q18). Pumps that exist only in Odoo are kept but flagged `on_controller = 0` and excluded from polling. | **Accepted** | 2026-10-11 |
+| D16 | `SetFuelGradesPrices` from devices is forwarded (QUEUE, journaled), not denied (Q19) | **Accepted** | 2026-10-11 |
+| D17 | Controller credentials: `controllers.secret_ref` names an environment variable (default `PTS_PASSWORD_<odoo_backend_config_id>`) that is read from `.env` or server env. Passwords are never stored in the DB or git, and are not copied from Odoo. | **Accepted** (interim, until D5) | 2026-10-11 |
 
 ## Notes on D1
 

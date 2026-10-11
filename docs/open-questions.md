@@ -44,3 +44,12 @@ Q1: treated as a probable error; not pursued.
     The import currently uses the active backend config. As a result, Station 36's config (named "Station 36 NO PTS") is active and has a URL, so it is classified as **pts**. The stations classified manual today are Fuel Station 38, Fuel Station 41 and Station40. A per-station `mode_override` column exists for corrections.
 18. Odoo lists 19 pumps for Station 11, but the controller reports 18. Should the registry follow the controller configuration (the source of truth for dispensing) and flag the difference?
 19. FuelPay's price list screen sends `SetFuelGradesPrices`. Should the mediator forward it, or deny it so that prices stay with Odoo's price push? See `api-compatibility-matrix.md` §1.
+
+---
+**Answers (2026-10-11, recorded from chat):**
+- Q15: Yes. Live transactions are recorded with PTS switched off on the devices.
+- Q16: Open (non-blocking).
+- Q17: A `pts.backend.config` with **Active = false** means a non-PTS station. Non-PTS stations keep a backend config only so that pumps can be auto-created from a PTS station.
+- Q18: The controller is the source of truth. Odoo lists extra pumps, and only 6–7 pumps actually have transactions on the PTS.
+- Q19: Forward `SetFuelGradesPrices` through the mediator. FuelPay's Odoo URL and PTS URL will both point to the mediator.
+- Polling permission: granted for continuous read-only polling. PTS data must come from PTS directly, not from Odoo.
