@@ -37,6 +37,13 @@ final class Environment
         self::setString('DB_NAME', 'fuel_mediator');
         self::setString('DB_USER', 'root');
         self::setString('DB_PASSWORD', '');
+
+        self::setString('ODOO_URL', '');
+        self::setString('ODOO_DB', '');
+        self::setString('ODOO_USER', '');
+        self::setString('ODOO_PASSWORD', '');
+
+        self::setInteger('RETENTION_DAYS', 90);
     }
 
     /**

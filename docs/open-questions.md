@@ -37,3 +37,10 @@ Q1: treated as a probable error; not pursued.
 
 15. Are FuelPay devices at Station 11 (and others) running with PTS switched off (manual entry)? Evidence: 100% `manual_sale`, no PTS tx ids, meter events `source=manual`. See [discovery/reconciliation-feasibility.md](discovery/reconciliation-feasibility.md).
 16. Why does the PTS controller record only a small fraction of fills as transactions (e.g. 29 vs 1,415 on 2026-10-09)? Pump standalone/auto-authorize mode or a configuration issue?
+17. D9 says non-PTS stations are those with "PTS set to Inactive". Which flag is meant?
+    - the `pts.backend.config` **Active** checkbox, or
+    - the POS config **Enable fuel sale (PTS)** (`pts_enable_fuel_sale`)?
+
+    The import currently uses the active backend config. As a result, Station 36's config (named "Station 36 NO PTS") is active and has a URL, so it is classified as **pts**. The stations classified manual today are Fuel Station 38, Fuel Station 41 and Station40. A per-station `mode_override` column exists for corrections.
+18. Odoo lists 19 pumps for Station 11, but the controller reports 18. Should the registry follow the controller configuration (the source of truth for dispensing) and flag the difference?
+19. FuelPay's price list screen sends `SetFuelGradesPrices`. Should the mediator forward it, or deny it so that prices stay with Odoo's price push? See `api-compatibility-matrix.md` §1.

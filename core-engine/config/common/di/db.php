@@ -24,6 +24,8 @@ return [
             ),
             (string) Environment::get('DB_USER'),
             (string) Environment::get('DB_PASSWORD'),
+            // All timestamps are stored in UTC (docs/database-design.md).
+            [PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+00:00'"],
         ),
         $schemaCache,
     ),

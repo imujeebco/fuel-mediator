@@ -1,7 +1,7 @@
 # Progress
 
 ## Current phase
-**Phase 1 — Technical design: COMPLETE (2026-10-11).** Phase 2 (foundation) next. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+**Phase 2 — Yii3 foundation: COMPLETE (2026-10-11).** Next: Phase 3a (observe-mode collectors). Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
 Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
@@ -39,8 +39,34 @@ See [open-questions.md](open-questions.md).
 - Written: `architecture.md`, `api-compatibility-matrix.md`, `database-design.md`, `transaction-lifecycle.md`, `security-and-failure-handling.md`, `testing.md`.
 - Pending user input: `SetFuelGradesPrices` policy (matrix §1), Q15, Q16.
 
+## Phase 2 (2026-10-11)
+
+What was built:
+- **Migrations** (`core-engine/src/Migration/M2610110000{01..06}`): six revertible migrations creating 20 tables for configuration, observation, commands, the Odoo mirror and relay journal, reconciliation, and infrastructure (outbox, leases, cursors, audit).
+- **Database:** every connection is forced to UTC (`PDO::MYSQL_ATTR_INIT_COMMAND`).
+- **HTTP:** session and CSRF middleware now apply only to the UI route group, so machine endpoints are stateless. New endpoints: `/health` (checks the database; returns 503 when it is down) and `/health/stations`.
+- **Logging:** JSON lines written to `runtime/logs/app.log`. Everything passes through `Redactor`, which masks sensitive keys, positional Odoo passwords and card numbers.
+- **Outbound HTTP:** `CurlHttpTransport`, behind `HttpTransportInterface`. It sends an explicit User-Agent, supports Digest/Basic auth, uses hard timeouts and **never retries**.
+- **Odoo:** `JsonRpcOdooReadClient`, read-only by construction. Only read methods are allowed, and the interface has no write methods.
+- **Registry:** `yii station:import [--dry-run]` imports stations from Odoo. It is idempotent, creates new controllers **disabled**, and preserves operator settings on re-import.
+- **Tests:** `tests/bootstrap.php` forces the `*_test` schema and blanks `ODOO_URL`. Added fakes for HTTP and Odoo, plus a `TestDatabase` helper.
+
+Bugs found and fixed along the way:
+- The stations table had a UNIQUE constraint on the Odoo `code`, which is not unique in Odoo, so five stations were merged. Station identity is now `odoo_station_id` only.
+- The FastRoute route cache went stale when routes changed. It is now disabled in dev and test.
+
+Current state:
+- The local dev database holds the imported registry: 38 stations, 24 controllers (all disabled), 284 pumps and 261 nozzles.
+- Test results are in `testing.md`.
+
 ## Next recommended step
-Phase 2: migrations (configuration, observation, journal, reconciliation, infrastructure tables), health endpoints, redacting logger, read-only Odoo station import, tests.
+Phase 3a, observe mode (read-only):
+1. Controller gateway: per-controller lock, and an allow-list restricting collectors to read packets.
+2. Status/totals collector writing `meter_snapshots` and `fill_events`, enabled for Station 11 only.
+3. Odoo reader for `pts.terminal.sale` / `pos.session`.
+4. First volume-level reconciliation report.
+
+User input needed: Q15–Q19.
 
 ## How to resume
 1. Read this file.
