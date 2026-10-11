@@ -12,6 +12,7 @@ use JsonException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
+use Throwable;
 use Yiisoft\Router\HydratorAttribute\RouteArgument;
 
 use function bin2hex;
@@ -38,6 +39,18 @@ final class JsonPtsAction
     public function __invoke(ServerRequestInterface $request, #[RouteArgument('backend')] int $backend): ResponseInterface
     {
         $correlationId = bin2hex(random_bytes(8));
+        try {
+            return $this->handle($request, $backend, $correlationId);
+        } catch (Throwable $e) {
+            // E.g. MySQL down: answer in jsonPTS form instead of an HTML error page; the device shows the pump offline.
+            $this->logger->error('PTS endpoint failed', ['backend' => $backend, 'correlation_id' => $correlationId, 'error' => $e->getMessage()]);
+            return $this->responder->respond(['Protocol' => 'jsonPTS', 'Error' => 'Mediator temporarily unavailable'], 503)
+                ->withHeader('X-Correlation-Id', $correlationId);
+        }
+    }
+
+    private function handle(ServerRequestInterface $request, int $backend, string $correlationId): ResponseInterface
+    {
         $row = $this->controllers->rowByOdooBackendId($backend);
         if ($row === null) {
             return $this->responder->respond(['Protocol' => 'jsonPTS', 'Error' => 'Unknown station controller'], 404);

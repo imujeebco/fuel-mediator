@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Web\Odoo;
 
 use App\Odoo\Relay\OdooRelay;
+use App\Odoo\Relay\RelayResponse;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 use function bin2hex;
 use function random_bytes;
@@ -23,13 +26,21 @@ final class JsonRpcRelayAction
         private readonly OdooRelay $relay,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly LoggerInterface $logger,
     ) {}
 
     public function __invoke(ServerRequestInterface $request): ResponseInterface
     {
         $correlationId = bin2hex(random_bytes(8));
         $server = $request->getServerParams();
-        $result = $this->relay->handle((string) $request->getBody(), (string) ($server['REMOTE_ADDR'] ?? ''), $correlationId);
+        try {
+            $result = $this->relay->handle((string) $request->getBody(), (string) ($server['REMOTE_ADDR'] ?? ''), $correlationId);
+        } catch (Throwable $e) {
+            // E.g. MySQL down: never answer with an HTML error page (FuelPay would reset its Odoo session); answer with
+            // a JSON-RPC error FuelPay treats as retryable, so the sale stays in its offline queue.
+            $this->logger->error('Odoo relay failed', ['correlation_id' => $correlationId, 'error' => $e->getMessage()]);
+            $result = RelayResponse::rpcError(null, 'mediator.Unavailable', 'Mediator temporarily unavailable (503), try again');
+        }
 
         $response = $this->responseFactory->createResponse($result->status)
             ->withHeader('Content-Type', 'application/json')
