@@ -35,7 +35,7 @@ final class M261012000009CreateFillSettlements implements RevertibleMigrationInt
                 CONSTRAINT fk_fill_settlements_station FOREIGN KEY (station_id) REFERENCES stations (id),
                 CONSTRAINT fk_fill_settlements_fill FOREIGN KEY (fill_event_id) REFERENCES fill_events (id),
                 CONSTRAINT fk_fill_settlements_sale FOREIGN KEY (odoo_sale_id) REFERENCES odoo_sales (id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             SQL);
     }
 
