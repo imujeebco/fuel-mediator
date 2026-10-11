@@ -37,7 +37,7 @@ chown -R fuelmed:fuelmed "$APP"
 echo "== database"
 if [ ! -f /root/.fuel-mediator-db ]; then
     DBPASS=$(openssl rand -hex 24)
-    mysql -e "CREATE DATABASE IF NOT EXISTS fuel_mediator CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+    mysql -e "CREATE DATABASE IF NOT EXISTS fuel_mediator CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
               CREATE USER IF NOT EXISTS 'fuelmed'@'localhost' IDENTIFIED BY '$DBPASS';
               ALTER USER 'fuelmed'@'localhost' IDENTIFIED BY '$DBPASS';
               GRANT ALL PRIVILEGES ON fuel_mediator.* TO 'fuelmed'@'localhost'; FLUSH PRIVILEGES;"
