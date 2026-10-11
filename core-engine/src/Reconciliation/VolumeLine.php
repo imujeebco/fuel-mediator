@@ -7,7 +7,9 @@ namespace App\Reconciliation;
 final class VolumeLine
 {
     public function __construct(
-        public readonly int $pump,
+        public readonly string $label,
+        public readonly ?int $pump,
+        public readonly ?string $grade,
         public readonly int $fills,
         public readonly int $missedFills,
         public readonly string $dispensed,

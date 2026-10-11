@@ -69,3 +69,37 @@ Script: `fuel-scratpad/phase0/status_sampler.py`. `PumpGetStatus` for all 18 pum
 - `PumpGetStatus` only, batched ≤ 8 per request, for pumps present in the controller's own `GetPumpsConfiguration`.
 - A fill event is recorded when an idle status shows a new `LastTransaction`. Missed fills are counted from transaction gaps.
 - A meter snapshot is written when `LastTotalVolume` changes, plus a 5-minute heartbeat to prove coverage.
+
+## Addendum 2: first live reconciliation against production Odoo (2026-10-11)
+
+Production Odoo: `https://fuelksa.odoo.com`, db `iwesabe-fuel-main-11731627`. Access was read-only with user approval. The staging copy stopped receiving sales on 2026-10-10.
+
+### Finding 1: Odoo tags other companies' sales with Station 11
+
+`pts.terminal.sale.station_id` = Fuel Station 11 is set on sales whose POS config belongs to another company:
+
+| POS config | Company / station | Tagged "Station 11" today |
+|---|---|---|
+| 50 "F011 Answer" | F011 / Station 11 | 62 (correct) |
+| 66 "F024 Abrhem slem" | F024 / Station 24 | 55 |
+| 211 "Telak" | F038 (no PTS station) | 71 |
+| 213 "Jhanger" | F037 / Station 37 | 82 |
+
+Over one day, 823 sales from other companies were tagged Station 11, against 797 genuine F011 sales. A likely cause is Odoo's fallback `_pts_active_backend_for_company` (`odoo_pts_bridge/models/pts_backend_config.py:327-337`), which picks *any* active backend when a company has none. A device's stored station setting is another candidate. **The mediator attributes sales by the POS config's company (D18).**
+
+### Finding 2: with PTS off, the sale's pump number is the fuel grade
+
+Almost all manual sales are keyed as pump 1 (A 91) or pump 2 (A 95), whichever physical pump was used. Per-pump reconciliation is therefore meaningless at these stations. **The mediator reconciles and matches by fuel grade (D19).**
+
+### Result: Station 11, 07:05–07:45 local, grade level
+
+| Grade | Fills | Dispensed L | Sales | Sold L | Gap L |
+|---|---|---|---|---|---|
+| A 91 | 11 | 274.330 | 8 | 219.267 | +55.063 (unsold) |
+| A 95 | 8 | 375.960 | 8 | 375.965 | −0.005 |
+| Diesel | 1 | 64.250 | 1 | 67.039 | −2.789 |
+
+Fill-level matching:
+- 15 confirmed links, 1 probable. Sales typically arrive 10–60 s after the fill ends.
+- Diesel: a 64.25 L fill (SAR 115.00) pairs with a SAR 120.00 sale registered 3 minutes before the fill ended. This is a likely mis-recorded amount.
+- An A 91 pump-18 fill (SAR 50.00, 07:26:41) had no sale after 10 minutes.

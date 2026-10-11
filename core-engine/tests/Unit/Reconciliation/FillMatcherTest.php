@@ -26,7 +26,7 @@ final class FillMatcherTest extends Unit
     {
         $this->db = TestDatabase::connection();
         TestDatabase::truncate($this->db);
-        $controller = PtsFixture::seedController($this->db, 1, 2, [1, 2]);
+        $controller = PtsFixture::seedController($this->db, 1, 2, [1, 2], [1 => 'A 91', 2 => 'A 95']);
         $this->stationId = $controller->stationId;
         $this->controllerId = $controller->id;
     }
@@ -116,7 +116,8 @@ final class FillMatcherTest extends Unit
         $meter += 100;
         $this->db->createCommand()->insert('fill_events', [
             'station_id' => $this->stationId, 'controller_id' => $this->controllerId, 'pump_number' => $pump,
-            'nozzle_number' => 1, 'pts_transaction_no' => $tx, 'ended_at' => "2026-10-11 $endedUtc", 'volume' => $volume,
+            'nozzle_number' => 1, 'fuel_name' => $pump === 2 ? 'A 95' : 'A 91', 'pts_transaction_no' => $tx,
+            'ended_at' => "2026-10-11 $endedUtc", 'volume' => $volume,
             'amount' => $amount, 'meter_volume_after' => $meter, 'source' => 'status_transition',
         ])->execute();
 
@@ -128,6 +129,7 @@ final class FillMatcherTest extends Unit
         $id = ++$this->saleSeq;
         $this->db->createCommand()->insert('odoo_sales', [
             'station_id' => $this->stationId, 'odoo_id' => $id, 'uuid' => "u-$id", 'pump_number' => $pump, 'nozzle_number' => 1,
+            'fuel_name' => $pump === 2 ? 'A 95' : 'A 91',
             'volume' => $volume, 'amount' => $amount, 'payment_status' => 'APPROVED', 'payment_method' => $rrn ? 'CARD' : 'CASH',
             'rrn' => $rrn, 'manual_sale' => 1, 'pts_transaction_id' => $tx, 'sale_created_at' => "2026-10-11 $createdUtc",
             'odoo_write_date' => "2026-10-11 $createdUtc",

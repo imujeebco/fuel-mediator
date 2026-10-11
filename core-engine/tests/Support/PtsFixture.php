@@ -72,8 +72,9 @@ final class PtsFixture
      * Inserts a station with one enabled controller and the given pumps (on_controller = 1). Returns the endpoint.
      *
      * @param list<int> $pumps
+     * @param array<int, string> $grades pump => fuel grade of nozzle 1 (default "A 91")
      */
-    public static function seedController(ConnectionInterface $db, int $odooStationId, int $odooBackendId, array $pumps): ControllerEndpoint
+    public static function seedController(ConnectionInterface $db, int $odooStationId, int $odooBackendId, array $pumps, array $grades = []): ControllerEndpoint
     {
         $db->createCommand()->insert('stations', [
             'code' => 'T' . $odooStationId, 'name' => 'Test Station ' . $odooStationId, 'odoo_station_id' => $odooStationId,
@@ -91,6 +92,10 @@ final class PtsFixture
         foreach ($pumps as $pump) {
             $db->createCommand()->insert('pumps', [
                 'station_id' => $stationId, 'controller_id' => $controllerId, 'pump_number' => $pump, 'on_controller' => 1,
+            ])->execute();
+            $db->createCommand()->insert('nozzles', [
+                'station_id' => $stationId, 'pump_id' => (int) $db->getLastInsertId(), 'nozzle_number' => 1,
+                'fuel_grade_id' => 1, 'fuel_name' => $grades[$pump] ?? 'A 91', 'on_controller' => 1,
             ])->execute();
         }
         $_ENV['PTS_PASSWORD_' . $odooBackendId] = 'test-secret';

@@ -19,15 +19,16 @@ use function sprintf;
 /**
  * Fill-level reconciliation (docs/transaction-lifecycle.md §6.2): links controller fills to Odoo sales.
  *
- * Fills are processed in chronological order. Candidate sales: same station and pump, APPROVED, not yet linked,
- * created in [fill end − 2 min, fill end + grace]. Rules, in order:
- *   1. sale.pts_transaction_id = fill transaction number            → confirmed (tx_id)
+ * Fills are processed in chronological order. Candidate sales: same station and fuel grade, APPROVED, not yet linked,
+ * created in [fill end − 2 min, fill end + grace]. The grade is used instead of the pump because, with PTS off on the
+ * devices, the pump number on a manual sale is effectively the fuel grade (live finding 2026-10-11). Rules, in order:
+ *   1. same pump and sale.pts_transaction_id = fill transaction no. → confirmed (tx_id)
  *   2. amount ±0.05 SAR and volume ±0.05 L, exactly one candidate    → confirmed (fingerprint)
  *   3. amount/volume fingerprint matches, several candidates         → probable, earliest sale (sequential)
  *   4. amount ±0.05 only, exactly one candidate                      → probable (fingerprint)
  *   5. otherwise, once the grace period has passed                   → unmatched_fill discrepancy
  * Amount and time alone never yield "confirmed". After matching, APPROVED sales on controller pumps left without a
- * fill past the grace period become `sale_without_fill`; if an identical sale on the same pump was linked within
+ * fill past the grace period become `sale_without_fill`; if an identical sale of the same grade was linked within
  * 15 minutes it is a `duplicate_candidate` (manual sale after a timeout + PTS sale). Detect and report only (D2).
  */
 final class FillMatcher
@@ -48,9 +49,9 @@ final class FillMatcher
         $now = $this->clock->now();
         $graceSeconds = $graceMinutes * 60;
 
-        /** @var list<array{id: string, pump_number: string, nozzle_number: string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string}> $fills */
+        /** @var list<array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string}> $fills */
         $fills = (new Query($this->db))
-            ->select(['id', 'pump_number', 'nozzle_number', 'pts_transaction_no', 'ended_at', 'volume', 'amount'])
+            ->select(['id', 'pump_number', 'nozzle_number', 'fuel_name', 'pts_transaction_no', 'ended_at', 'volume', 'amount'])
             ->from('fill_events')
             ->where(['station_id' => $stationId, 'state' => ['observed', 'unmatched', 'ambiguous']])
             ->andWhere(['>=', 'ended_at', $fromUtc])->andWhere(['<', 'ended_at', $toUtc])
@@ -67,23 +68,19 @@ final class FillMatcher
     }
 
     /**
-     * @param array{id: string, pump_number: string, nozzle_number: string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string} $fill
+     * @param array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string} $fill
      */
     private function matchFill(int $stationId, array $fill, DateTimeImmutable $now, int $graceSeconds, MatchResult $result): void
     {
         $ended = new DateTimeImmutable($fill['ended_at'] . ' UTC');
         $windowEnd = $ended->modify("+{$graceSeconds} seconds");
 
-        /** @var list<array{id: string, pts_transaction_id: ?string, volume: string, amount: string, sale_created_at: string}> $candidates */
+        $sameGroup = $fill['fuel_name'] !== null ? ['fuel_name' => $fill['fuel_name']] : ['pump_number' => (int) $fill['pump_number']];
+        /** @var list<array{id: string, pump_number: ?string, pts_transaction_id: ?string, volume: string, amount: string, sale_created_at: string}> $candidates */
         $candidates = (new Query($this->db))
-            ->select(['id', 'pts_transaction_id', 'volume', 'amount', 'sale_created_at'])
+            ->select(['id', 'pump_number', 'pts_transaction_id', 'volume', 'amount', 'sale_created_at'])
             ->from('odoo_sales')
-            ->where([
-                'station_id' => $stationId,
-                'pump_number' => (int) $fill['pump_number'],
-                'payment_status' => 'APPROVED',
-                'match_state' => 'unlinked',
-            ])
+            ->where(['station_id' => $stationId, 'payment_status' => 'APPROVED', 'match_state' => 'unlinked'] + $sameGroup)
             ->andWhere(['>=', 'sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
             ->andWhere(['<=', 'sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
             ->orderBy(['sale_created_at' => SORT_ASC, 'id' => SORT_ASC])
@@ -92,7 +89,8 @@ final class FillMatcher
         // Rule 1: transaction number.
         if ($fill['pts_transaction_no'] !== null) {
             foreach ($candidates as $sale) {
-                if ($sale['pts_transaction_id'] !== null && $sale['pts_transaction_id'] === $fill['pts_transaction_no']) {
+                if ($sale['pts_transaction_id'] !== null && $sale['pts_transaction_id'] === $fill['pts_transaction_no']
+                    && $sale['pump_number'] === $fill['pump_number']) {
                     $this->link($stationId, (int) $fill['id'], (int) $sale['id'], 'tx_id', 'confirmed', $result);
                     return;
                 }
@@ -145,19 +143,21 @@ final class FillMatcher
         $settledBefore = $now->modify("-{$graceSeconds} seconds")->format('Y-m-d H:i:s.v');
         $until = $toUtc < $settledBefore ? $toUtc : $settledBefore;
 
-        /** @var list<array{id: string, pump_number: string, volume: string, amount: string, sale_created_at: string, uuid: string, payment_method: ?string, rrn: ?string}> $sales */
+        $grades = (new Query($this->db))->select('fuel_name')->distinct()->from('nozzles')
+            ->where(['station_id' => $stationId, 'on_controller' => 1]);
+        /** @var list<array{id: string, pump_number: ?string, fuel_name: ?string, volume: string, amount: string, sale_created_at: string, uuid: string, payment_method: ?string, rrn: ?string}> $sales */
         $sales = (new Query($this->db))
-            ->select(['s.id', 's.pump_number', 's.volume', 's.amount', 's.sale_created_at', 's.uuid', 's.payment_method', 's.rrn'])
+            ->select(['s.id', 's.pump_number', 's.fuel_name', 's.volume', 's.amount', 's.sale_created_at', 's.uuid', 's.payment_method', 's.rrn'])
             ->from(['s' => 'odoo_sales'])
-            ->innerJoin(['p' => 'pumps'], 'p.station_id = s.station_id AND p.pump_number = s.pump_number AND p.on_controller = 1')
             ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED', 's.match_state' => 'unlinked'])
+            ->andWhere(['in', 's.fuel_name', $grades])
             ->andWhere(['>=', 's.sale_created_at', $fromUtc])->andWhere(['<', 's.sale_created_at', $until])
             ->all();
 
         foreach ($sales as $sale) {
             $createdAt = new DateTimeImmutable($sale['sale_created_at'] . ' UTC');
             $twinId = (new Query($this->db))->select('id')->from('odoo_sales')
-                ->where(['station_id' => $stationId, 'pump_number' => (int) $sale['pump_number'], 'match_state' => 'linked', 'amount' => $sale['amount']])
+                ->where(['station_id' => $stationId, 'fuel_name' => $sale['fuel_name'], 'match_state' => 'linked', 'amount' => $sale['amount']])
                 ->andWhere(['between', 'sale_created_at',
                     $createdAt->modify('-' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v'),
                     $createdAt->modify('+' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
@@ -170,13 +170,13 @@ final class FillMatcher
             $this->raise(
                 $stationId,
                 $state,
-                (int) $sale['pump_number'],
+                (int) ($sale['pump_number'] ?? 0),
                 $sale['sale_created_at'],
                 $sale['volume'],
                 $sale['amount'],
                 $isDuplicate
-                    ? sprintf('Pump %d: sale SAR %s may duplicate another sale of the same amount (no second fill observed)', (int) $sale['pump_number'], $sale['amount'])
-                    : sprintf('Pump %d: sale SAR %s at %s UTC has no matching controller fill', (int) $sale['pump_number'], $sale['amount'], $sale['sale_created_at']),
+                    ? sprintf('%s: sale SAR %s may duplicate another sale of the same amount (no second fill observed)', (string) $sale['fuel_name'], $sale['amount'])
+                    : sprintf('%s: sale SAR %s at %s UTC has no matching controller fill', (string) $sale['fuel_name'], $sale['amount'], $sale['sale_created_at']),
                 ['odoo_sale_id' => (int) $sale['id'], 'uuid' => $sale['uuid'], 'twin_sale_id' => $isDuplicate ? (int) $twinId : null,
                     'payment_method' => $sale['payment_method'], 'rrn' => $sale['rrn']],
                 "sale:{$sale['id']}",

@@ -18,19 +18,23 @@ use function number_format;
 /**
  * Incremental, read-only mirror of `pts.terminal.sale` into `odoo_sales`, per station.
  *
+ * Sales are attributed to a station by their POS config's company (one company per station), NOT by the sale's own
+ * `station_id`: in production Odoo that field carries the wrong station for devices of other companies (live
+ * finding 2026-10-11). The station Odoo tagged is kept in `odoo_tagged_station_id` for misattribution reporting.
+ *
  * Cursor = (write_date, id) in `sync_cursors`, so edits to existing sales (payment status, POS sync, session) are
  * picked up too. Upserts are keyed on the Odoo id, so re-reading the same page is harmless.
  */
 final class OdooSalesReader
 {
-    public const SOURCE = 'odoo.terminal_sale';
+    public const SOURCE = 'odoo.terminal_sale.by_company';
     private const PAGE_SIZE = 500;
 
     private const FIELDS = [
         'id', 'uuid', 'alias_uuids', 'pump_number', 'nozzle_number', 'fuel_name', 'volume', 'amount_sar', 'price',
         'payment_status', 'payment_method', 'rrn', 'approval_code', 'manual_sale', 'pts_transaction_id',
         'terminal_id', 'terminal_order_ref', 'operator_name', 'pos_config_id', 'pos_session_id', 'pos_order_id',
-        'pos_sync_status', 'created_at', 'create_date', 'write_date',
+        'pos_sync_status', 'created_at', 'create_date', 'write_date', 'station_id',
     ];
 
     public function __construct(
@@ -41,7 +45,7 @@ final class OdooSalesReader
     /**
      * @return int Number of sales upserted.
      */
-    public function pull(OdooReadClientInterface $odoo, int $stationId, int $odooStationId, int $initialLookbackDays, int $maxPages = 50): int
+    public function pull(OdooReadClientInterface $odoo, int $stationId, int $odooCompanyId, int $initialLookbackDays, int $maxPages = 50): int
     {
         [$cursorDate, $cursorId] = $this->cursor($stationId, $initialLookbackDays);
         $total = 0;
@@ -50,7 +54,7 @@ final class OdooSalesReader
             $rows = $odoo->searchRead(
                 'pts.terminal.sale',
                 [
-                    ['station_id', '=', $odooStationId],
+                    ['pos_config_id.company_id', '=', $odooCompanyId],
                     '|',
                     ['write_date', '>', $cursorDate],
                     '&', ['write_date', '=', $cursorDate], ['id', '>', $cursorId],
@@ -63,9 +67,9 @@ final class OdooSalesReader
                 break;
             }
 
-            $this->db->transaction(function () use ($rows, $stationId, &$cursorDate, &$cursorId, &$total): void {
+            $this->db->transaction(function () use ($rows, $stationId, $odooCompanyId, &$cursorDate, &$cursorId, &$total): void {
                 foreach ($rows as $row) {
-                    $this->upsert($stationId, $row);
+                    $this->upsert($stationId, $odooCompanyId, $row);
                     $cursorDate = (string) $row['write_date'];
                     $cursorId = (int) $row['id'];
                     $total++;
@@ -84,11 +88,13 @@ final class OdooSalesReader
     /**
      * @param array<string, mixed> $row
      */
-    private function upsert(int $stationId, array $row): void
+    private function upsert(int $stationId, int $odooCompanyId, array $row): void
     {
         $createdAt = self::str($row['created_at'] ?? null) ?? self::str($row['create_date'] ?? null) ?? (string) $row['write_date'];
         $columns = [
             'station_id' => $stationId,
+            'odoo_tagged_station_id' => self::many2oneId($row['station_id'] ?? null),
+            'odoo_company_id' => $odooCompanyId,
             'odoo_id' => (int) $row['id'],
             'uuid' => (string) $row['uuid'],
             'alias_uuids' => self::str($row['alias_uuids'] ?? null),
@@ -117,6 +123,18 @@ final class OdooSalesReader
         $update = $columns;
         unset($update['odoo_id']);
         $this->db->createCommand()->upsert('odoo_sales', $columns, $update)->execute();
+    }
+
+    /**
+     * Sales Odoo tagged with this station although they come from another company's POS (misattribution).
+     */
+    public function misattributedCount(OdooReadClientInterface $odoo, int $odooStationId, int $odooCompanyId, string $sinceUtc): int
+    {
+        return $odoo->searchCount('pts.terminal.sale', [
+            ['station_id', '=', $odooStationId],
+            ['pos_config_id.company_id', '!=', $odooCompanyId],
+            ['create_date', '>=', $sinceUtc],
+        ]);
     }
 
     /** @return array{string, int} */

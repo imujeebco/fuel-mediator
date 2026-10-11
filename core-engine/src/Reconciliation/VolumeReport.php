@@ -10,14 +10,16 @@ final class VolumeReport
 {
     /** @var list<VolumeLine> */
     public array $lines = [];
-    public int $salesOnUnknownPumps = 0;
-    public string $salesOnUnknownPumpsVolume = '0.000';
+    /** Sales the grouping cannot place (unknown grade / pump the controller does not have). */
+    public int $unplacedSales = 0;
+    public string $unplacedSalesVolume = '0.000';
 
     public function __construct(
         public readonly int $stationId,
         public readonly string $fromUtc,
         public readonly string $toUtc,
         public readonly int $graceMinutes,
+        public readonly string $groupBy = VolumeReconciler::BY_GRADE,
     ) {}
 
     /** clean | has_discrepancies | incomplete */
@@ -34,7 +36,7 @@ final class VolumeReport
             }
         }
 
-        return $this->salesOnUnknownPumps > 0 ? 'has_discrepancies' : 'clean';
+        return $this->unplacedSales > 0 ? 'has_discrepancies' : 'clean';
     }
 
     /** @return array<string, int|string> */
@@ -59,7 +61,8 @@ final class VolumeReport
             'sales' => $sales,
             'sold' => $sold,
             'gap' => Decimal::sub($dispensed, $sold),
-            'sales_on_unknown_pumps' => $this->salesOnUnknownPumps,
+            'unplaced_sales' => $this->unplacedSales,
+            'unplaced_sales_volume' => $this->unplacedSalesVolume,
             'status' => $this->status(),
         ];
     }

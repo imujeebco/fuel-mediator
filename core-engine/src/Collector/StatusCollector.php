@@ -17,6 +17,7 @@ use DateTimeImmutable;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Query\Query;
 
+use function is_string;
 use function json_encode;
 
 /**
@@ -201,16 +202,17 @@ final class StatusCollector
         }
 
         $inserted = $this->db->createCommand(
-            'INSERT IGNORE INTO fill_events (station_id, controller_id, pump_number, nozzle_number, pts_transaction_no,'
+            'INSERT IGNORE INTO fill_events (station_id, controller_id, pump_number, nozzle_number, fuel_name, pts_transaction_no,'
             . ' started_at, ended_at, volume, amount, price, meter_volume_after, meter_amount_after, source,'
             . ' preceding_missed_count, preceding_missed_volume, raw, created_at, updated_at)'
-            . ' VALUES (:station, :controller, :pump, :nozzle, :tx, :started, :ended, :volume, :amount, :price,'
+            . ' VALUES (:station, :controller, :pump, :nozzle, :fuel, :tx, :started, :ended, :volume, :amount, :price,'
             . ' :meter, :meter_amount, \'status_transition\', :missed, :missed_volume, :raw, :now, :now)',
             [
                 ':station' => $controller->stationId,
                 ':controller' => $controller->id,
                 ':pump' => $status->pump,
                 ':nozzle' => $status->lastNozzle ?? 1,
+                ':fuel' => $this->fuelName($controller->id, $status->pump, $status->lastNozzle ?? 1),
                 ':tx' => $status->lastTransaction,
                 ':started' => $controller->controllerTimeToUtc($status->lastStartedAtLocal),
                 ':ended' => $controller->controllerTimeToUtc($status->lastEndedAtLocal) ?? $nowDb,
@@ -229,5 +231,16 @@ final class StatusCollector
         if ($inserted > 0) {
             $result->fills++;
         }
+    }
+
+    /** Fuel grade of the nozzle per the controller's own configuration (see ConfigSync). */
+    private function fuelName(int $controllerId, int $pump, int $nozzle): ?string
+    {
+        $name = (new Query($this->db))->select('n.fuel_name')->from(['n' => 'nozzles'])
+            ->innerJoin(['p' => 'pumps'], 'p.id = n.pump_id')
+            ->where(['p.controller_id' => $controllerId, 'p.pump_number' => $pump, 'n.nozzle_number' => $nozzle])
+            ->scalar();
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 }

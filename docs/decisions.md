@@ -18,6 +18,9 @@
 | D14 | Station mode: a backend config with Active = false means non-PTS (Q17). This is already how `station:import` works. | **Accepted** | 2026-10-11 |
 | D15 | The pump/nozzle registry follows the controller's own configuration (Q18). Pumps that exist only in Odoo are kept but flagged `on_controller = 0` and excluded from polling. | **Accepted** | 2026-10-11 |
 | D16 | `SetFuelGradesPrices` from devices is forwarded (QUEUE, journaled), not denied (Q19) | **Accepted** | 2026-10-11 |
+| D18 | Odoo sales are attributed to a station by their **POS config's company**, not by `pts.terminal.sale.station_id`, which is wrong for other companies' devices (live finding). The tagged station is kept as `odoo_tagged_station_id`, and misattribution is reported. | **Accepted** (evidence-based; confirm) | 2026-10-11 |
+| D19 | Reconciliation and fill matching group **by fuel grade** by default, because with PTS off the sale's pump number is the grade. `--by-pump` exists for PTS-on stations. The transaction-number rule still requires the same pump. | **Accepted** (evidence-based; confirm) | 2026-10-11 |
+| D20 | Live reconciliation reads **production** Odoo (`fuelksa.odoo.com`, `iwesabe-fuel-main-11731627`), read-only, with the provided user (approved by the user). | **Accepted** | 2026-10-11 |
 | D17 | Controller credentials: `controllers.secret_ref` names an environment variable (default `PTS_PASSWORD_<odoo_backend_config_id>`) that is read from `.env` or server env. Passwords are never stored in the DB or git, and are not copied from Odoo. | **Accepted** (interim, until D5) | 2026-10-11 |
 
 ## Notes on D1

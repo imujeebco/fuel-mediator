@@ -36,7 +36,8 @@ final class ReconVolumeCommand extends Command
             ->addOption('from', null, InputOption::VALUE_REQUIRED, 'Window start, station local time (YYYY-MM-DD HH:MM)')
             ->addOption('to', null, InputOption::VALUE_REQUIRED, 'Window end, station local time (default: now)')
             ->addOption('grace', null, InputOption::VALUE_REQUIRED, 'Minutes after window end in which sales still count', '10')
-            ->addOption('no-persist', null, InputOption::VALUE_NONE, 'Do not write discrepancies / run records');
+            ->addOption('no-persist', null, InputOption::VALUE_NONE, 'Do not write discrepancies / run records')
+            ->addOption('by-pump', null, InputOption::VALUE_NONE, 'Group by physical pump (only meaningful where devices run with PTS on)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -66,17 +67,18 @@ final class ReconVolumeCommand extends Command
             $to->setTimezone($utc)->format('Y-m-d H:i:s.v'),
             (int) $input->getOption('grace'),
             !$input->getOption('no-persist'),
+            $input->getOption('by-pump') ? VolumeReconciler::BY_PUMP : VolumeReconciler::BY_GRADE,
         );
 
         $io->title(sprintf('%s  %s → %s (local)', $station['name'], $from->format('Y-m-d H:i'), $to->format('Y-m-d H:i')));
         $rows = [];
         foreach ($report->lines as $line) {
             $rows[] = [
-                $line->pump, $line->fills, $line->missedFills, $line->dispensed, $line->sales, $line->sold,
+                $line->label, $line->fills, $line->missedFills, $line->dispensed, $line->sales, $line->sold,
                 $line->gap, $line->coverage, $line->flagged ? 'FLAG' : '',
             ];
         }
-        $io->table(['Pump', 'Fills', 'Missed', 'Dispensed L', 'Sales', 'Sold L', 'Gap L', 'Coverage', ''], $rows);
+        $io->table([$report->groupBy === VolumeReconciler::BY_PUMP ? 'Pump' : 'Grade', 'Fills', 'Missed', 'Dispensed L', 'Sales', 'Sold L', 'Gap L', 'Coverage', ''], $rows);
         $io->definitionList(...array_map(
             static fn(string $k, int|string $v): array => [$k => (string) $v],
             array_keys($report->totals()),
