@@ -1,8 +1,8 @@
 # Progress
 
 ## Current phase
-**Phase 0 — Repository and environment discovery: COMPLETE (2026-10-11).**
-Awaiting approval of the plan and decisions D1–D6 in [phase0-discovery-report.md](phase0-discovery-report.md) before Phase 1.
+**Phase 1 — Technical design (starting).** Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
 - Read `fuel-docs/FuelPay_Mediator_Architecture_Understanding.md` in full.
@@ -28,8 +28,14 @@ None. No application code exists yet. Verification probes and their results are 
 ## Unresolved questions
 See [open-questions.md](open-questions.md).
 
+## Phase 0 → baseline follow-up (2026-10-11)
+- User answered the open questions and approved D2–D4 and D6. D1 was revised (FuelPay only). D5 is deferred.
+- `core-engine/`: removed the Zuberi membership app, PII exports, archives and cPanel files; removed `yiisoft/mailer-symfony` and `yiisoft/user`; retargeted `.env` to `fuel_mediator`.
+- Created local MySQL schemas `fuel_mediator` and `fuel_mediator_test` (empty).
+- Tests: Unit OK (15), Functional OK (1), Console OK (2, after making `ConsoleTester` use `PHP_BINARY`), Psalm no errors. Web suite not run (needs `composer` on PATH).
+
 ## Next recommended step
-Get approval of D1–D6. Then Phase 1: design documents and the API compatibility matrix.
+Phase 1: architecture, API compatibility matrix, database design, transaction lifecycle, security/failure handling.
 
 ## How to resume
 1. Read this file.

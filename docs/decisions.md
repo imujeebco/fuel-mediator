@@ -2,11 +2,22 @@
 
 | # | Decision | Status | Date |
 |---|---|---|---|
-| D1 | PTS insertion point: rewrite `pts.backend.config.direct_pts_url` per station to the mediator's jsonPTS endpoint | **Proposed** — awaiting approval | 2026-10-11 |
-| D2 | Mediator detects, links and surfaces duplicate candidates; it never auto-suppresses or alters sales (initially) | **Proposed** | 2026-10-11 |
-| D3 | First pilot runs in observe-only mode (read controller history and Odoo; not in request path) | **Proposed** | 2026-10-11 |
-| D4 | `yiisoft/app-api` 1.4.0 + `yiisoft/db-mysql` + `yiisoft/db-migration`, no ORM | **Proposed** | 2026-10-11 |
-| D5 | Mediator-issued, hashed per-station (later per-device) credentials; real PTS credentials never leave the mediator | **Proposed** | 2026-10-11 |
-| D6 | Scaffold commits on `main`, then one branch per phase; no pushes without approval | **Proposed** | 2026-10-11 |
+| D1 | **Only FuelPay traffic goes through the mediator** (Odoo's crons keep talking to PTS directly, per Q3). FuelPay's Odoo URL is pointed at the mediator's Odoo-compatible relay. The relay rewrites `pts_connection` in `pts.backend.config.mobile_get_pumps` responses so the device's PTS URL becomes the mediator's per-station jsonPTS endpoint. No Odoo configuration or code change. PTS remote-server/WebSocket upload is a possible later improvement; it is not relied on. | **Accepted (revised)** | 2026-10-11 |
+| D2 | The mediator detects, links and surfaces duplicate candidates for review only. Odoo's existing dedupe stays authoritative. **Core objective is reconciliation.** | **Accepted** | 2026-10-11 |
+| D3 | Observe-only first: read controller history and Odoo outside the live request path. **Primary objective: no sale is lost.** Every dispensed controller transaction must be accounted for by an Odoo sale, or be reported. | **Accepted** | 2026-10-11 |
+| D4 | Use the provided Yii3 app in `core-engine/` (`yiisoft/app` 1.4.0) with the Zuberi layer removed; `yiisoft/db-mysql` + `db-migration`, no ORM | **Accepted** | 2026-10-11 |
+| D5 | Credentials and access hardening are **deferred**. Baseline hygiene still applies: no secrets in git or logs. | **Deferred** | 2026-10-11 |
+| D6 | Commits on `main`, no pushes without approval | **Accepted** | 2026-10-11 |
 | D7 | All scratch/probe code lives in `../fuel-scratpad/` | **Accepted** (user instruction) | 2026-10-11 |
 | D8 | PTS and Odoo access limited to reads; nothing pushed | **Accepted** (user instruction) | 2026-10-11 |
+| D9 | Non-PTS station = a station whose PTS configuration (`pts.backend.config`) is inactive in Odoo (Q8) | **Accepted** | 2026-10-11 |
+| D10 | Session-close discrepancies: no blocking. The mediator provides a consolidated reconciliation report per station/session (Q7). It recognises the current practice of parking balance entries and placing 1–2 balancing orders in a new session (Q6). | **Accepted** | 2026-10-11 |
+| D11 | Production target: Ubuntu Linux on a Contabo server (Q12). Journal/audit retention 3 months, configurable (Q13). | **Accepted** | 2026-10-11 |
+| D12 | Sizing assumption: 4–6 Android payment terminals per station at peak (Q9) | **Accepted** | 2026-10-11 |
+
+## Notes on D1
+
+- Mixed mode is safe. A device still configured with the real Odoo URL keeps working directly; it is simply invisible to the mediator.
+- Rollback for a device is a settings change: restore the Odoo URL.
+- The relay must be allow-listed (not an open proxy) and must reproduce Odoo's JSON-RPC envelopes exactly. Contract: [discovery/fuelpay-odoo-contract.md](discovery/fuelpay-odoo-contract.md).
+- Odoo's own PTS polling continues, so the controller sees the mediator plus Odoo instead of 4–6 devices plus Odoo.
