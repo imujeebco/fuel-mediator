@@ -1,0 +1,21 @@
+[Unit]
+Description=FuelPay Mediator collector (read-only PTS status polling, fill detection, command resolution)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fuelmed
+Group=fuelmed
+WorkingDirectory=/opt/fuel-mediator/core-engine
+ExecStart=/usr/bin/php yii collector:run
+Restart=always
+RestartSec=5
+# collector:run stops cleanly on SIGTERM (pcntl).
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=append:/var/log/fuel-mediator/collector.log
+StandardError=append:/var/log/fuel-mediator/collector.log
+
+[Install]
+WantedBy=multi-user.target

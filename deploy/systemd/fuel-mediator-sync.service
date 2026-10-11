@@ -1,0 +1,16 @@
+[Unit]
+Description=FuelPay Mediator sync: mirror Odoo sales, then link fills to sales (feeds D21 settled fills)
+After=network-online.target mysql.service
+
+[Service]
+Type=oneshot
+User=fuelmed
+Group=fuelmed
+WorkingDirectory=/opt/fuel-mediator/core-engine
+# Station list: mediator station ids served by this instance (Station 11 = 3).
+Environment=STATIONS=3
+ExecStart=/usr/bin/php yii odoo:pull-sales --station=${STATIONS}
+ExecStart=/bin/sh -c 'for s in $(echo "$STATIONS" | tr , " "); do /usr/bin/php yii recon:fills --station=$s --from="-13 hours"; done'
+TimeoutStartSec=55
+StandardOutput=append:/var/log/fuel-mediator/sync.log
+StandardError=append:/var/log/fuel-mediator/sync.log
