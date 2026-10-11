@@ -118,3 +118,10 @@ New environment setting: `MEDIATOR_PUBLIC_URL`.
 1. Read this file.
 2. Read `phase0-discovery-report.md` §5–7.
 3. Probe scripts need env vars `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (never commit them).
+
+## Live observation: PTS switched on at Station 11 (2026-10-11 19:33 local / 16:33 UTC)
+
+The user enabled FuelPay PTS mode at Station 11. Collector and sales mirror are unchanged, so the switch is a before/after experiment.
+- Comparison query: `fuel-scratpad/pts_switch_observation.sql`.
+- Watched: PTS transaction ids on sales, manual-sale share, pump-number accuracy, transaction-id links, duplicates, controller load.
+- First effect: from 19:33 the controller stopped answering the collector (timeout after 10 s, 0 bytes received). The circuit breaker backed off.
