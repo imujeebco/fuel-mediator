@@ -1,7 +1,7 @@
 # Progress
 
 ## Current phase
-**Phase 1 — Technical design (starting).** Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+**Phase 1 — Technical design: COMPLETE (2026-10-11).** Phase 2 (foundation) next. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
 Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
@@ -34,8 +34,13 @@ See [open-questions.md](open-questions.md).
 - Created local MySQL schemas `fuel_mediator` and `fuel_mediator_test` (empty).
 - Tests: Unit OK (15), Functional OK (1), Console OK (2, after making `ConsoleTester` use `PHP_BINARY`), Psalm no errors. Web suite not run (needs `composer` on PATH).
 
+## Phase 1 (2026-10-11)
+- Read-only feasibility check (Station 11): controller transaction history covers only a fraction of fills, so **meters are the reconciliation backbone**. See `discovery/reconciliation-feasibility.md`.
+- Written: `architecture.md`, `api-compatibility-matrix.md`, `database-design.md`, `transaction-lifecycle.md`, `security-and-failure-handling.md`, `testing.md`.
+- Pending user input: `SetFuelGradesPrices` policy (matrix §1), Q15, Q16.
+
 ## Next recommended step
-Phase 1: architecture, API compatibility matrix, database design, transaction lifecycle, security/failure handling.
+Phase 2: migrations (configuration, observation, journal, reconciliation, infrastructure tables), health endpoints, redacting logger, read-only Odoo station import, tests.
 
 ## How to resume
 1. Read this file.
