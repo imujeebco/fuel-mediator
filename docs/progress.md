@@ -1,7 +1,9 @@
 # Progress
 
 ## Current phase
-**Phase 3b — Compatibility endpoints: IMPLEMENTED, mock-tested (2026-10-11).** Phase 3a observe mode is running live on Station 11 (read-only). Next: review of the first live reconciliation, then Phase 4. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
+**Go-live preparation (2026-10-12): all Station 11 devices through the mediator (D22).** Server kit, D21 and hardening are built; deployment waits for the Contabo server access. See the section at the end.
+
+Previously: **Phase 3b — Compatibility endpoints: IMPLEMENTED, mock-tested (2026-10-11).** Phase 3a observe mode is running live on Station 11 (read-only). Next: review of the first live reconciliation, then Phase 4. Phase 0 complete; decisions recorded in [decisions.md](decisions.md).
 Yii3 baseline in `core-engine/` is cleaned and green (Unit 15/15, Functional 1/1, Console 2/2, Psalm 0 errors).
 
 ## Completed work
@@ -139,3 +141,19 @@ The user enabled FuelPay PTS mode at Station 11. Collector and sales mirror are 
   - The transaction-number rule now runs before any grade filter.
 - **`manual_sale` stays true for 92% of sales** even in PTS mode. It means "not authorized by the app", not "no PTS".
 - **Potential duplicate to watch:** pump 18 at 19:44 has a manual APPROVED SAR 50 sale without a transaction number (`aqib`) next to a PENDING PTS sale with tx 11813 (`esaa`).
+
+## Session 42742 close and go-live preparation (2026-10-12)
+
+Live findings (reports in `fuel-scratpad/session_report.py`, `session_render.py`):
+- Session 42742 (12:01–00:07 local): with 8 duplicate payments at close removed, A 91 balanced, A 95 +225 L and Diesel +113 L unsold (about SAR 774), mostly before PTS was switched on.
+- The duplicates come from FuelPay itself: no link between manual sales and PTS fills, and the close is blocked until Odoo's unpaid list is empty. → **D21**.
+- Odoo session meters: openings were seeded from earlier shifts (not live) on several pumps; at the 42742 close, 7 pumps (3, 6, 9, 11, 13, 16, 18) got closing = opening + litres sold instead of a reading, and the next session 42846 copied them as openings. Session 42842 (other POS config) opened live on 14 pumps; pumps 1, 2, 16, 18 were seeded. Two F011 sessions were open on the same pumps at once.
+
+Built:
+- **D21 settled fills**: `Reconciliation/SettledFills`, `Odoo/Relay/SettledFillFilter`, relay mode `FILTER`, table `fill_settlements` (migration 000009), env `SETTLED_FILL_FILTER`. Tests: `tests/Unit/Odoo/SettledFillFilterTest.php` (uuid parity with FuelPay, the 42742 wrong-pump case, unpaid fill never hidden, own PTS sale untouched, ambiguity guard, kill switch).
+- **Hardening**: both device endpoints answer protocol-shaped JSON on any internal failure (e.g. MySQL down) instead of an HTML error page.
+- **Server kit** `deploy/`: nginx (only device paths public), PHP-FPM pool (24 workers), collector service, sync timer (sales mirror + fill matching every minute), `install.sh`, `push.sh`, read-only `smoke-test.sh`. Runbook: `docs/deployment-production.md`.
+
+Tests: Unit 90 OK, Functional 8 OK, Psalm clean. Web suite needs a running server (unchanged).
+
+Next: server access → install → registry → smoke test → switch devices (runbook §5).
