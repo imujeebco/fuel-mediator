@@ -1,0 +1,13 @@
+/vendor/
+/runtime/
+/.env
+/.env.*
+!/.env.example
+/public/assets/
+/tests/_output/
+/tests/Support/_generated/
+*.log
+.phpunit.cache/
+.php-cs-fixer.cache
+/.idea/
+/.vscode/
