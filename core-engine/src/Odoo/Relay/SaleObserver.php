@@ -90,10 +90,11 @@ final class SaleObserver
             return null;
         }
         $now = $this->clock->nowForDb();
+        // A sale whose station is unknown (e.g. a backend id the mediator does not serve) must not unlink the device.
         $this->db->createCommand()->upsert(
             'devices',
             ['terminal_id' => $terminalId, 'station_id' => $stationId, 'first_seen_at' => $now, 'last_seen_at' => $now],
-            ['station_id' => $stationId, 'last_seen_at' => $now],
+            $stationId === null ? ['last_seen_at' => $now] : ['station_id' => $stationId, 'last_seen_at' => $now],
         )->execute();
 
         $id = (new Query($this->db))->select('id')->from('devices')->where(['terminal_id' => $terminalId])->scalar();

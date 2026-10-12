@@ -86,6 +86,19 @@ final class OdooRelayTest extends Unit
         assertSame($this->scalar('SELECT id FROM stations'), $this->scalar('SELECT station_id FROM sale_observations'));
     }
 
+    public function testSaleNamingAnUnknownStationDoesNotUnlinkTheDevice(): void
+    {
+        $answer = ['jsonrpc' => '2.0', 'id' => 3, 'result' => ['status' => 'created', 'canonical_uuid' => 'x']];
+        $this->transport->queueJson($answer)->queueJson($answer);
+        $unknown = ['station_id' => 1] + $this->salePayload('u-5'); // backend 1: not served by the mediator
+
+        $this->relay()->handle($this->rpc(3, 'pts.backend.config', 'register_terminal_sale', [$this->salePayload('u-4')]), '10.0.0.5', 'c');
+        $this->relay()->handle($this->rpc(3, 'pts.backend.config', 'register_terminal_sale', [$unknown]), '10.0.0.5', 'c');
+
+        assertSame($this->scalar('SELECT id FROM stations'), $this->scalar('SELECT station_id FROM devices'));
+        assertNull($this->scalar("SELECT station_id FROM sale_observations WHERE uuid = 'u-5'"));
+    }
+
     /** Test scenario 9: Odoo unavailable during a completed sale — the mediator never acknowledges it itself. */
     public function testOdooTimeoutReturnsRetryableErrorAndKeepsTheAttempt(): void
     {

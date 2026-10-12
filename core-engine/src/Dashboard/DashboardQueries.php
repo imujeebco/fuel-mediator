@@ -396,13 +396,14 @@ final class DashboardQueries
 
     /**
      * Terminals seen at a station: from Odoo sales (every device, direct or not) and from the mediator's own traffic.
+     * With a null station: terminals that talked to the mediator in the window but are not linked to any station.
      *
      * @return list<array<string, mixed>>
      */
-    public function devices(int $stationId, string $fromUtc): array
+    public function devices(?int $stationId, string $fromUtc): array
     {
         /** @var list<array<string, mixed>> $fromSales */
-        $fromSales = (new Query($this->db))
+        $fromSales = $stationId === null ? [] : (new Query($this->db))
             ->select([
                 'terminal_id', 'sales' => new Expression('COUNT(*)'), 'amount' => new Expression('SUM(amount)'),
                 'litres' => new Expression('SUM(volume)'), 'last_sale_at' => new Expression('MAX(sale_created_at)'),
@@ -424,7 +425,9 @@ final class DashboardQueries
         /** @var array<string, array<string, mixed>> $viaMediator */
         $viaMediator = [];
         /** @var list<array<string, mixed>> $known */
-        $known = (new Query($this->db))->from('devices')->where(['or', ['station_id' => $stationId], ['station_id' => null]])->all();
+        $known = $stationId === null
+            ? (new Query($this->db))->from('devices')->where(['station_id' => null])->andWhere(['>=', 'last_seen_at', $fromUtc])->all()
+            : (new Query($this->db))->from('devices')->where(['station_id' => $stationId])->all();
         foreach ($known as $device) {
             $viaMediator[(string) $device['terminal_id']] = $device;
         }

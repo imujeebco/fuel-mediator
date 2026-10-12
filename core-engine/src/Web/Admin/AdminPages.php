@@ -111,6 +111,14 @@ final class AdminPages
             }
             $groups[] = ['station' => $station, 'fmt' => new Fmt($this->queries->zone($station)), 'window' => $window, 'devices' => $devices];
         }
+        if ($only === null && $all !== []) {
+            // Devices whose sales named a station the mediator does not serve: listed once, not under every station.
+            $window = $this->queries->window($all[0], $windowKey);
+            $devices = $this->queries->devices(null, $window['from']);
+            if ($devices !== []) {
+                $groups[] = ['station' => ['name' => 'Not linked to a station'], 'fmt' => new Fmt($this->queries->zone($all[0])), 'window' => $window, 'devices' => $devices];
+            }
+        }
 
         return $this->render('devices', 'devices', ['groups' => $groups, 'windowKey' => $windowKey, 'stations' => $all, 'only' => $only]);
     }
