@@ -7,6 +7,7 @@ namespace App\Console;
 use App\Odoo\OdooException;
 use App\Odoo\OdooReadClientInterface;
 use App\Odoo\Sync\OdooSalesReader;
+use App\Odoo\Sync\OdooSessionsReader;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -18,7 +19,7 @@ use Yiisoft\Db\Query\Query;
 
 #[AsCommand(
     name: 'odoo:pull-sales',
-    description: 'Incrementally mirror pts.terminal.sale from Odoo (read-only) for active stations.',
+    description: 'Incrementally mirror pts.terminal.sale and their POS sessions from Odoo (read-only) for active stations.',
 )]
 final class OdooPullSalesCommand extends Command
 {
@@ -26,6 +27,7 @@ final class OdooPullSalesCommand extends Command
         private readonly ConnectionInterface $db,
         private readonly OdooReadClientInterface $odoo,
         private readonly OdooSalesReader $reader,
+        private readonly OdooSessionsReader $sessions,
     ) {
         parent::__construct();
     }
@@ -57,15 +59,16 @@ final class OdooPullSalesCommand extends Command
         foreach ($query->all() as $station) {
             try {
                 $count = $this->reader->pull($this->odoo, (int) $station['id'], (int) $station['odoo_company_id'], $lookbackDays);
+                $sessions = $this->sessions->pull($this->odoo, (int) $station['id']);
                 $wrong = $this->reader->misattributedCount($this->odoo, (int) $station['odoo_station_id'], (int) $station['odoo_company_id'], $since);
-                $rows[] = [$station['name'], (string) $count, (string) $wrong, 'ok'];
+                $rows[] = [$station['name'], (string) $count, (string) $sessions, (string) $wrong, 'ok'];
             } catch (OdooException $e) {
                 // One station's failure does not stop the others.
                 $failures++;
-                $rows[] = [$station['name'], '0', '-', 'error: ' . $e->getMessage()];
+                $rows[] = [$station['name'], '0', '-', '-', 'error: ' . $e->getMessage()];
             }
         }
-        $io->table(['Station', 'Sales upserted', 'Tagged here by other companies', 'Status'], $rows);
+        $io->table(['Station', 'Sales upserted', 'Sessions updated', 'Tagged here by other companies', 'Status'], $rows);
 
         return $failures === 0 ? Command::SUCCESS : Command::FAILURE;
     }
