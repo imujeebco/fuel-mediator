@@ -9,6 +9,7 @@ use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PumpsRewriter;
 use App\Odoo\Relay\SettledFillFilter;
 use App\Shared\Crypto\SecretBox;
+use App\Web\Admin\Auth\AdminAuth;
 use App\Shared\Http\CurlHttpTransport;
 use App\Shared\Http\HttpTransportInterface;
 
@@ -31,6 +32,13 @@ return [
     // D23: encryption of controller passwords read from Odoo.
     SecretBox::class => [
         '__construct()' => ['base64Key' => (string) Environment::get('MEDIATOR_SECRET_KEY')],
+    ],
+
+    AdminAuth::class => [
+        '__construct()' => [
+            'user' => (string) Environment::get('ADMIN_USER'),
+            'passwordHash' => (string) Environment::get('ADMIN_PASSWORD_HASH'),
+        ],
     ],
 
     OdooReadClientInterface::class => static fn(HttpTransportInterface $transport): JsonRpcOdooReadClient

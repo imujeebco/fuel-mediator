@@ -15,6 +15,9 @@ use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Expression\Expression;
 use Yiisoft\Db\Query\Query;
 
+use function getmypid;
+use function gethostname;
+
 /**
  * One sync pass for the whole network (or one station), shared by `yii sync:run`, the server timer and the
  * dashboard's "Run sync now" button:
@@ -74,6 +77,7 @@ final class SyncService
                     $line['matched'] = $match->confirmed + $match->probable;
                     $line['unmatched'] = $match->unmatchedFills;
                 }
+                $this->heartbeat($id);
             } catch (OdooException $e) {
                 $line['error'] = 'Odoo: ' . $e->getMessage();
             } catch (Throwable $e) {
@@ -83,5 +87,18 @@ final class SyncService
         }
 
         return $results;
+    }
+
+    /** Sync heartbeat per station (dashboard System page: is the sync cron running?). */
+    private function heartbeat(int $stationId): void
+    {
+        $now = $this->clock->now();
+        $this->db->createCommand()->upsert('worker_leases', [
+            'worker' => 'sync',
+            'station_id' => $stationId,
+            'holder' => (string) gethostname() . ':' . (string) getmypid(),
+            'lease_until' => $now->modify('+2 minutes')->format('Y-m-d H:i:s.v'),
+            'heartbeat_at' => $now->format('Y-m-d H:i:s.v'),
+        ], true)->execute();
     }
 }

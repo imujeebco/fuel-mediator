@@ -55,6 +55,11 @@ final class Environment
         // Decision D23: key (32 bytes, base64) for controller passwords read from Odoo and stored encrypted.
         // Generate with `yii secret:generate-key`. Empty = passwords are not stored (env PTS_PASSWORD_<id> only).
         self::setString('MEDIATOR_SECRET_KEY', '');
+
+        // Dashboard login (one admin). Hash from the /login/password-hash page or password_hash(). Empty = the
+        // dashboard is reachable only from the server itself.
+        self::setString('ADMIN_USER', 'admin');
+        self::setString('ADMIN_PASSWORD_HASH', '');
     }
 
     /**

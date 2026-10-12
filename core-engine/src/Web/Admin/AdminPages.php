@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Web\Admin;
 
 use App\Dashboard\DashboardQueries;
+use App\Maintenance\SystemStatus;
 use App\Reconciliation\VolumeReconciler;
 use DateTimeZone;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -30,6 +31,7 @@ final class AdminPages
         private readonly WebViewRenderer $viewRenderer,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly FlashInterface $flash,
+        private readonly SystemStatus $system,
     ) {}
 
     /** Network: every station from Odoo, with collection status, today's sales and reconciliation where collected. */
@@ -136,6 +138,24 @@ final class AdminPages
             'traffic' => $this->queries->traffic($minutes),
             'minutes' => $minutes,
             'fmt' => new Fmt($stations === [] ? new DateTimeZone('UTC') : $this->queries->zone($stations[0])),
+        ]);
+    }
+
+    public function system(): ResponseInterface
+    {
+        $revisionFile = dirname(__DIR__, 4) . '/REVISION';
+        $pending = [];
+        try {
+            $pending = $this->system->pendingMigrations();
+        } catch (\Throwable) {
+            // shown by the database check
+        }
+
+        return $this->render('system', 'system', [
+            'checks' => $this->system->checks(),
+            'pending' => $pending,
+            'cron' => $this->system->cronLines(),
+            'revision' => is_file($revisionFile) ? trim((string) file_get_contents($revisionFile)) : 'development',
         ]);
     }
 

@@ -32,7 +32,27 @@ return [
     Group::create()
         ->middleware(SessionMiddleware::class)
         ->middleware(CsrfTokenMiddleware::class)
+        ->middleware(Web\Admin\Auth\AdminAuthMiddleware::class)
         ->routes(
+            // Login (the only pages open without a session).
+            Route::get('/login')
+                ->action([Web\Admin\Auth\LoginPages::class, 'form'])
+                ->name('login'),
+            Route::post('/login')
+                ->action([Web\Admin\Auth\LoginPages::class, 'login'])
+                ->name('login/submit'),
+            Route::methods(['GET', 'POST'], '/login/password-hash')
+                ->action([Web\Admin\Auth\LoginPages::class, 'passwordHash'])
+                ->name('login/password-hash'),
+            Route::post('/logout')
+                ->action([Web\Admin\Auth\LoginPages::class, 'logout'])
+                ->name('logout'),
+            Route::get('/system')
+                ->action([Web\Admin\AdminPages::class, 'system'])
+                ->name('admin/system'),
+            Route::post('/actions/system/migrate')
+                ->action([Web\Admin\AdminActions::class, 'migrate'])
+                ->name('admin/action/migrate'),
             // Admin dashboard (docs/deployment-production.md: local-only on servers).
             Route::get('/')
                 ->action([Web\Admin\AdminPages::class, 'network'])

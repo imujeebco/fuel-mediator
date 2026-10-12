@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Web\Admin;
 
 use App\Collector\ConfigSync;
+use App\Maintenance\SystemStatus;
 use App\Odoo\OdooException;
 use App\Odoo\OdooReadClientInterface;
 use App\Pts\ControllerLock;
@@ -53,6 +54,7 @@ final class AdminActions
         private readonly FlashInterface $flash,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly LoggerInterface $logger,
+        private readonly SystemStatus $system,
     ) {}
 
     /** Refresh stations, controllers, pumps and PTS/manual mode from Odoo. */
@@ -150,6 +152,19 @@ final class AdminActions
             $this->audit->record('controller', $id, 'disabled', 'dashboard', (int) $row['station_id']);
 
             return "Collection stopped for {$row['name']}.";
+        });
+    }
+
+    /** Apply pending database migrations (hosts without a shell). */
+    public function migrate(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->act($request, 'Apply migrations', function (): string {
+            $applied = $this->system->applyMigrations();
+            $this->audit->record('system', 'migrations', 'applied', 'dashboard', null, data: ['applied' => $applied]);
+
+            $names = array_map(static fn(string $class): string => substr($class, (int) strrpos($class, '\\') + 1), $applied);
+
+            return $applied === [] ? 'nothing to apply.' : count($applied) . ' applied: ' . implode(', ', $names) . '.';
         });
     }
 

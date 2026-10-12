@@ -8,6 +8,7 @@ use App\Web\Admin\Fmt;
  * Admin dashboard layout.
  *
  * @var string $content
+ * @var string|null $csrf
  * @var Yiisoft\View\WebView $this
  * @var Yiisoft\Router\CurrentRoute $currentRoute
  * @var Yiisoft\Router\UrlGeneratorInterface $urlGenerator
@@ -18,6 +19,7 @@ $stations = $params['collecting'] ?? [];
 $active = $params['active'] ?? '';
 $refresh = $params['refresh'] ?? true;
 $flash = $params['flash'] ?? null;
+$guest = $params['guest'] ?? false;
 
 $this->beginPage();
 ?>
@@ -103,6 +105,7 @@ $this->beginPage();
 <header class="top">
     <div class="in">
         <span class="brand">FuelPay Mediator</span>
+        <?php if (!$guest): ?>
         <nav>
             <a href="/" class="<?= $active === 'network' ? 'on' : '' ?>">Network</a>
             <?php foreach ($stations as $s): ?>
@@ -111,7 +114,10 @@ $this->beginPage();
             <a href="/devices" class="<?= $active === 'devices' ? 'on' : '' ?>">Devices</a>
             <a href="/issues" class="<?= $active === 'issues' ? 'on' : '' ?>">Issues</a>
             <a href="/traffic" class="<?= $active === 'traffic' ? 'on' : '' ?>">Traffic</a>
+            <a href="/system" class="<?= $active === 'system' ? 'on' : '' ?>">System</a>
         </nav>
+        <form class="inline" method="post" action="/logout"><input type="hidden" name="_csrf" value="<?= Fmt::e($csrf ?? '') ?>"><button class="btn" type="submit">Sign out</button></form>
+        <?php endif; ?>
         <?php if ($refresh): ?>
             <span class="refresh"><span id="rf-label">Auto-refresh 15 s</span><button type="button" id="rf-toggle">Pause</button></span>
         <?php endif; ?>
