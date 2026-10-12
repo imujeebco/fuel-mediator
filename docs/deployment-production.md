@@ -105,6 +105,15 @@ SELECT * FROM fill_settlements ORDER BY last_applied_at DESC LIMIT 20;
 ```
 Logs: `/var/log/fuel-mediator/{collector,sync,php-fpm}.log`, `core-engine/runtime/logs/app.log`, nginx logs.
 
+## 6a. Fuel prices (D25–D27)
+**Prices** page: per station and grade, Odoo vs controller vs what pumps report vs the last sale price. Buttons:
+*Read controller prices* (read-only), *Push Odoo prices now* (manual, verified by read-back), *Auto-push on/off*.
+With auto-push on, an Odoo price change reaches that controller within about a minute (sync timer). Limits: 0.5–10
+SAR/L, and automatic pushes refuse moves above 25 % (push those manually). `yii prices:push --station=<id> [--resend]`
+does the same from a shell; `--resend` re-sends unchanged prices, e.g. after a controller restart.
+Note: Odoo's own "PTS Full Auto Sync" copies controller prices back into Odoo every ~15 min, so a verified push keeps
+both sides equal; never set test prices on a live controller.
+
 ## 7. Rollback
 - **One device:** set its Odoo URL back to `https://fuelksa.odoo.com` and reload the pump list. Sales queued on the
   device are kept (same uuids) and sent to Odoo directly.
@@ -114,6 +123,7 @@ Logs: `/var/log/fuel-mediator/{collector,sync,php-fpm}.log`, `core-engine/runtim
 - **Server down:** devices lose Odoo and PTS (pumps show offline, FuelPay falls back to manual sales and keeps them
   queued). Restore each device's Odoo URL.
 - **D21 only:** `SETTLED_FILL_FILTER=0` and reload PHP-FPM; devices then see Odoo's unpaid list unchanged.
+- **Prices:** turn *Auto-push* off per station on the Prices page; Odoo's own push buttons keep working as before.
 
 ## 8. Known limits at go-live
 - No device authentication on the mediator yet (D5); the pump list still carries the controller credentials.
