@@ -1,20 +1,21 @@
-# FuelPay Mediator on Apache (CWP / shared hosting): copy to core-engine/public/.htaccess on the server.
-# Same exposure as the nginx site: only the device endpoints and /health are public; everything else is 404
-# (the monitoring UI is not reachable from outside on this host).
+# FuelPay Mediator on Apache (CWP / shared hosting): becomes core-engine/public/.htaccess in the upload package.
+# Every request goes to the app. Device endpoints and /health are open; the dashboard and its actions require the
+# admin login (ADMIN_PASSWORD_HASH), since a host without SSH has no private tunnel to reach it.
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
     # FuelPay sends Authorization on some PTS requests; keep it visible to PHP.
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-    RewriteCond %{REQUEST_URI} ^/odoo/jsonrpc$ [OR]
-    RewriteCond %{REQUEST_URI} ^/stations/[0-9]+/jsonPTS$ [OR]
-    RewriteCond %{REQUEST_URI} ^/health$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^ index.php [L]
-
-    RewriteCond %{REQUEST_URI} !^/index\.php$
-    RewriteRule ^ - [R=404,L]
 </IfModule>
+
+# Never serve dotfiles (.env lives outside public/, this is defence in depth).
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
 
 # Long calls: mobile_close_shift waits up to 55 s for Odoo.
 <IfModule mod_php.c>

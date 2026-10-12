@@ -11,3 +11,6 @@
 .php-cs-fixer.cache
 /.idea/
 /.vscode/
+
+# Upload packages (deploy/build_package.py)
+/dist/

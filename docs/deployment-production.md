@@ -10,27 +10,38 @@ devices of the served stations reach it over HTTPS. Files: `deploy/`.
 | `fuel-mediator-collector.service` | `yii collector:run`: read-only status polling, fill detection, command outcome resolution. |
 | `fuel-mediator-sync.timer` (every minute) | `yii sync:run`: Odoo sales and POS sessions for every active station, then fill matching where the mediator collects. Keeps the fill↔sale links that D21 relies on current. |
 
-## 0. Variant: CWP / CloudLinux account (`server.fuel.net.sa`, user `fuelne`)
-The provided server is a shared CloudLinux account managed by CentOS Web Panel (Apache, MariaDB, CageFS), not a root
-Ubuntu VPS, so `install.sh` (apt, nginx, systemd) does not apply there. Inspection on 2026-10-12 (read-only): SSH port
-22 closed, panel on 2083, MariaDB on 3306 (remote access refused), Apache with Let's Encrypt. The account also hosts
-other content (`public_html`, `odoo-files`); the mediator lives only in `~/fuel-mediator`.
+## 0. Variant: CWP / CloudLinux account without SSH (`server.fuel.net.sa`, user `fuelne`)
+The provided server is a shared CloudLinux account managed by CentOS Web Panel (Apache, MariaDB, CageFS), without SSH
+(port 22 closed, checked 2026-10-12). Everything is done through the panel, file uploads and the dashboard.
+The account also hosts other content (`public_html`, `odoo-files`); the mediator lives only in `~/fuel-mediator`.
 
-With SSH enabled for the account (jailed shell is enough):
-1. Code in `~/fuel-mediator` (shipped with `push.sh`, which only needs `ssh`/`tar`), `composer install --no-dev`
-   there (or upload `vendor/` built locally with the same PHP version).
-2. In CWP: a MariaDB database and user, a subdomain (e.g. `mediator.fuel.net.sa`) with document root
-   `~/fuel-mediator/core-engine/public` and a certificate, PHP 8.2+ with `bcmath`, `curl`, `pdo_mysql`, `mbstring`.
-3. `cp deploy/apache/htaccess core-engine/public/.htaccess` (same public allow-list as nginx).
-4. `.env` as in `install.sh`, `php yii migrate:up`, registry (§3).
-5. Cron instead of systemd (no long-running processes on CloudLinux):
-   ```
-   * * * * * cd ~/fuel-mediator/core-engine && php yii collector:run --max-seconds=55 >> ~/fuel-mediator/logs/collector.log 2>&1
-   * * * * * cd ~/fuel-mediator/core-engine && php yii sync:run >> ~/fuel-mediator/logs/sync.log 2>&1
-   ```
-   The collector's lease prevents two runs overlapping; between runs status is still served to devices on demand.
-6. Limits to watch: CloudLinux caps concurrent requests per account (entry processes), shared with everything else on
-   the account; outbound HTTPS to `station11.fuel.net.sa` must be tested from the server before the switch.
+**On the workstation:** `python deploy/build_package.py` → `dist/fuel-mediator-<rev>.zip` (code at HEAD, production
+`vendor/`, Apache `.htaccess`, `core-engine/.env.cwp` with a fresh `MEDIATOR_SECRET_KEY`). Keep the zip private.
+
+**In the panel:**
+1. Subdomain `mediator.fuel.net.sa` (DNS A → the server), document root `/home/fuelne/fuel-mediator/core-engine/public`,
+   Let's Encrypt certificate.
+2. MariaDB database + user (all privileges on that database).
+3. PHP 8.3 (or 8.2) for the subdomain with `bcmath`, `curl`, `pdo_mysql`, `sodium`, `mbstring`, `intl`.
+4. Upload the zip to `/home/fuelne/` and extract it there → `/home/fuelne/fuel-mediator/`.
+5. Rename `core-engine/.env.cwp` to `core-engine/.env`; fill `DB_*`, `ODOO_USER`, `ODOO_PASSWORD`.
+
+**In the browser:**
+6. `https://mediator.fuel.net.sa/login/password-hash` → choose the admin password → paste the shown
+   `ADMIN_PASSWORD_HASH=...` line into `.env` → sign in.
+7. **System** page → *Apply migrations*; every check should be OK (cron shows "never ran" until step 9).
+8. **Network** → *Sync stations from Odoo* (stations, controllers, pumps, encrypted controller passwords), then
+   *Run sync now*.
+9. Panel cron editor: add the two lines shown on the **System** page (collector every minute with
+   `--max-seconds=55`, sync every minute). The System page then shows both heartbeats.
+10. **Fuel Station 11** → *Read pump setup* → *Start collection*. Stop the workstation collector.
+11. Device switch-over (§5) when ready: set `MEDIATOR_PUBLIC_URL=https://mediator.fuel.net.sa` in `.env`.
+
+**Updates:** build a new zip, upload, extract over the old folder (`.env`, `runtime/` and `logs/` are not in the zip
+and stay), then **System** → *Apply migrations* if any are pending.
+
+Limits to watch: CloudLinux caps concurrent requests per account (entry processes), shared with everything else on the
+account; outbound HTTPS to `station11.fuel.net.sa` is shown working once *Read pump setup* succeeds.
 
 ## 1. Server prerequisites
 - SSH access as root (or sudo) and a public hostname whose DNS A record points at the server.
