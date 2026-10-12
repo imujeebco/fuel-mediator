@@ -8,7 +8,7 @@ devices of the served stations reach it over HTTPS. Files: `deploy/`.
 | nginx `deploy/nginx/fuel-mediator.conf` | HTTPS. Public paths: `/odoo/jsonrpc`, `/stations/{id}/jsonPTS`, `/health`. Everything else returns 404; the monitoring UI is on `127.0.0.1:8081` (SSH tunnel). |
 | PHP-FPM pool `deploy/php-fpm/fuel-mediator.conf` | 24 static workers, so a slow controller call never blocks the other terminals. |
 | `fuel-mediator-collector.service` | `yii collector:run`: read-only status polling, fill detection, command outcome resolution. |
-| `fuel-mediator-sync.timer` (every minute) | `odoo:pull-sales`, then `recon:fills --from="-13 hours"`. Keeps the fill↔sale links that D21 relies on current. |
+| `fuel-mediator-sync.timer` (every minute) | `yii sync:run`: Odoo sales and POS sessions for every active station, then fill matching where the mediator collects. Keeps the fill↔sale links that D21 relies on current. |
 
 ## 0. Variant: CWP / CloudLinux account (`server.fuel.net.sa`, user `fuelne`)
 The provided server is a shared CloudLinux account managed by CentOS Web Panel (Apache, MariaDB, CageFS), not a root
@@ -26,7 +26,7 @@ With SSH enabled for the account (jailed shell is enough):
 5. Cron instead of systemd (no long-running processes on CloudLinux):
    ```
    * * * * * cd ~/fuel-mediator/core-engine && php yii collector:run --max-seconds=55 >> ~/fuel-mediator/logs/collector.log 2>&1
-   * * * * * cd ~/fuel-mediator/core-engine && php yii odoo:pull-sales --station=3 && php yii recon:fills --station=3 --from="-13 hours" >> ~/fuel-mediator/logs/sync.log 2>&1
+   * * * * * cd ~/fuel-mediator/core-engine && php yii sync:run >> ~/fuel-mediator/logs/sync.log 2>&1
    ```
    The collector's lease prevents two runs overlapping; between runs status is still served to devices on demand.
 6. Limits to watch: CloudLinux caps concurrent requests per account (entry processes), shared with everything else on
@@ -77,6 +77,11 @@ writing snapshots (`/health/stations` through the tunnel) and that `journalctl -
 3. First sale on each device: watch `relay_calls` and `commands` (§6). One authorize, one fill, one sale.
 
 ## 6. Watching the day
+The admin dashboard (`/`, through the SSH tunnel) shows every station: PTS or manual mode from Odoo, collection
+status, today's sales, open sessions, devices, pumped vs sold where collected, issues. Buttons: *Sync stations from
+Odoo*, *Run sync now*, and per station *Sync*, *Read pump setup*, *Start/Stop collection* (audited in `audit_events`).
+A controller can only be collected once its password is in the environment (`PTS_PASSWORD_<backend id>`, D17).
+
 Through the tunnel or `mysql fuel_mediator`:
 ```sql
 -- relay health, last 15 min
