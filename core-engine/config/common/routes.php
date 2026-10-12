@@ -47,6 +47,18 @@ return [
             Route::post('/logout')
                 ->action([Web\Admin\Auth\LoginPages::class, 'logout'])
                 ->name('logout'),
+            Route::get('/prices')
+                ->action([Web\Admin\AdminPages::class, 'prices'])
+                ->name('admin/prices'),
+            Route::post('/actions/station/{id:\d+}/prices/read')
+                ->action([Web\Admin\AdminActions::class, 'readPrices'])
+                ->name('admin/action/prices-read'),
+            Route::post('/actions/station/{id:\d+}/prices/push')
+                ->action([Web\Admin\AdminActions::class, 'pushPrices'])
+                ->name('admin/action/prices-push'),
+            Route::post('/actions/station/{id:\d+}/prices/auto')
+                ->action([Web\Admin\AdminActions::class, 'autoPrices'])
+                ->name('admin/action/prices-auto'),
             Route::get('/system')
                 ->action([Web\Admin\AdminPages::class, 'system'])
                 ->name('admin/system'),

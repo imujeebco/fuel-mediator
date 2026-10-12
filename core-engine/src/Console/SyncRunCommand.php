@@ -41,9 +41,9 @@ final class SyncRunCommand extends Command
         foreach ($results as $r) {
             $failures += $r['error'] === null ? 0 : 1;
             $rows[] = [$r['station'], (string) $r['sales'], (string) $r['sessions'], $r['matched'] === null ? '-' : (string) $r['matched'],
-                $r['unmatched'] === null ? '-' : (string) $r['unmatched'], $r['error'] ?? 'ok'];
+                $r['unmatched'] === null ? '-' : (string) $r['unmatched'], $r['prices'] ?? '-', $r['error'] ?? 'ok'];
         }
-        (new SymfonyStyle($input, $output))->table(['Station', 'Sales', 'Sessions', 'Fills linked', 'Fills unmatched', 'Status'], $rows);
+        (new SymfonyStyle($input, $output))->table(['Station', 'Sales', 'Sessions', 'Fills linked', 'Fills unmatched', 'Prices', 'Status'], $rows);
 
         return $failures === 0 ? Command::SUCCESS : Command::FAILURE;
     }

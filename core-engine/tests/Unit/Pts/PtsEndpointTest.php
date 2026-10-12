@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Pts;
 
 use App\Collector\StatusCollector;
+use App\Price\PriceService;
 use App\Pts\ControllerEndpoint;
 use App\Pts\ControllerLock;
 use App\Pts\ControllerRepository;
@@ -21,6 +22,7 @@ use App\Tests\Support\Fake\FakeHttpTransport;
 use App\Tests\Support\PtsFixture;
 use App\Tests\Support\TestDatabase;
 use Codeception\Test\Unit;
+use Psr\Log\NullLogger;
 use DateTimeImmutable;
 use DateTimeZone;
 use Yiisoft\Cache\ArrayCache;
@@ -63,6 +65,35 @@ final class PtsEndpointTest extends Unit
         assertSame('confirmed', $this->scalar('SELECT state FROM commands'));
         assertSame('4861', (string) $this->scalar('SELECT pts_transaction_no FROM commands'));
         assertSame(4, (int) $this->scalar("SELECT COUNT(*) FROM audit_events WHERE entity_type = 'command'"), 'received + 3 transitions');
+    }
+
+    /** D27: prices change only from Odoo; a device's SetFuelGradesPrices never reaches the controller. */
+    public function testDevicesCannotSetFuelPrices(): void
+    {
+        $replies = $this->route([['Id' => 3, 'Type' => 'SetFuelGradesPrices', 'Data' => ['FuelGradesPrices' => [['FuelGradeId' => 1, 'Price' => 1.0]]]]]);
+
+        assertCount(0, $this->transport->requests);
+        assertStringContainsString('managed from Odoo', (string) $replies[0]['Error']);
+        assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM commands'));
+    }
+
+    /** D26: a device authorizing with a stale price gets the controller's current grade price. */
+    public function testAuthorizePriceIsCorrectedToTheControllersCurrentPrice(): void
+    {
+        $this->db->createCommand()->insert('fuel_grades', [
+            'controller_id' => $this->controller->id, 'grade_id' => 1, 'station_id' => $this->controller->stationId,
+            'name' => 'A 91', 'price' => '2.1800', 'observed_at' => '2026-10-11 03:00:00',
+        ])->execute();
+        $this->transport->queueJson(['Protocol' => 'jsonPTS', 'Packets' => [
+            ['Id' => 1, 'Type' => 'PumpAuthorizeConfirmation', 'Data' => ['Pump' => 1, 'Transaction' => 12]],
+        ]]);
+
+        $this->route([['Id' => 1, 'Type' => 'PumpAuthorize', 'Data' => ['Pump' => 1, 'Nozzle' => 1, 'Type' => 'Amount', 'Dose' => '50.00', 'Price' => '2.05']]]);
+
+        /** @var array{Packets: list<array{Data: array{Price: string}}>} $sent */
+        $sent = $this->transport->decodedRequest(0);
+        assertSame('2.18', $sent['Packets'][0]['Data']['Price']);
+        assertSame(1, (int) $this->scalar("SELECT COUNT(*) FROM audit_events WHERE event = 'price_corrected' AND data LIKE '%2.05%'"));
     }
 
     /** Test scenario 6: PTS timeout after an authorization request. */
@@ -218,7 +249,8 @@ final class PtsEndpointTest extends Unit
         $repository = new ControllerRepository($this->db, new SecretResolver(), $clock);
         $router = new PacketRouter(
             new StatusService($this->db, new StatusCollector($this->db, $pts, $clock), $lock, $repository, $clock),
-            new CommandService($this->db, $pts, $lock, $audit, $clock),
+            new CommandService($this->db, $pts, $lock, $audit, $clock,
+                new PriceService($this->db, $pts, $repository, $lock, $this->cache, $audit, $clock, new NullLogger())),
             $pts,
             $lock,
             $this->cache,

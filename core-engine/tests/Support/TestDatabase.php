@@ -23,7 +23,7 @@ final class TestDatabase
 
     /** Data tables cleared between tests, children first. */
     private const TABLES = [
-        'fill_settlements', 'audit_events', 'sync_cursors', 'worker_leases', 'outbox', 'reconciliation_runs', 'discrepancies',
+        'price_pushes', 'fuel_grades', 'odoo_station_prices', 'fill_settlements', 'audit_events', 'sync_cursors', 'worker_leases', 'outbox', 'reconciliation_runs', 'discrepancies',
         'match_links', 'sale_observations', 'relay_calls', 'pos_sessions', 'odoo_sales', 'commands',
         'fill_events', 'meter_snapshots', 'pump_status_cache', 'devices', 'nozzles', 'pumps', 'controllers',
         'stations',

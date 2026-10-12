@@ -119,6 +119,8 @@ final class Fmt
             'meter_regression' => 'Meter went backwards',
             'session_mismatch' => 'Session mismatch',
             'collector_gap' => 'Collector gap',
+            'price_mismatch' => 'Price differs from Odoo',
+            'price_push_failed' => 'Price push failed',
             default => $type,
         };
     }

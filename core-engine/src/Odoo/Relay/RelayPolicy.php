@@ -21,7 +21,7 @@ final class RelayPolicy
     /** @var array<string, array<string, string>> model => method => mode */
     private const OBJECT_METHODS = [
         'pos.config' => [
-            'pts_api_bootstrap_proxy' => self::PASS, 'mobile_get_price_version' => self::PASS,
+            'pts_api_bootstrap_proxy' => self::PASS, 'mobile_get_price_version' => self::FILTER,
             'mobile_get_paid_fills' => self::FILTER, 'mobile_get_unpaid_fills' => self::FILTER,
             'mobile_is_fill_paid' => self::FILTER, 'mobile_list_employees' => self::PASS, 'mobile_fuel_tanks' => self::PASS,
         ],

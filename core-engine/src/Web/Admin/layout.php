@@ -112,6 +112,7 @@ $this->beginPage();
                 <a href="/station/<?= (int) $s['id'] ?>" class="<?= $active === 'station:' . $s['id'] ? 'on' : '' ?>"><?= Fmt::e($s['name']) ?></a>
             <?php endforeach; ?>
             <a href="/devices" class="<?= $active === 'devices' ? 'on' : '' ?>">Devices</a>
+            <a href="/prices" class="<?= $active === 'prices' ? 'on' : '' ?>">Prices</a>
             <a href="/issues" class="<?= $active === 'issues' ? 'on' : '' ?>">Issues</a>
             <a href="/traffic" class="<?= $active === 'traffic' ? 'on' : '' ?>">Traffic</a>
             <a href="/system" class="<?= $active === 'system' ? 'on' : '' ?>">System</a>

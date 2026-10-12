@@ -6,6 +6,7 @@ namespace App\Web\Admin;
 
 use App\Collector\ConfigSync;
 use App\Maintenance\SystemStatus;
+use App\Price\PriceService;
 use App\Odoo\OdooException;
 use App\Odoo\OdooReadClientInterface;
 use App\Pts\ControllerLock;
@@ -24,9 +25,12 @@ use Yiisoft\Db\Query\Query;
 use Yiisoft\Router\HydratorAttribute\RouteArgument;
 use Yiisoft\Session\Flash\FlashInterface;
 
+use function array_filter;
+use function array_map;
 use function array_sum;
 use function count;
 use function implode;
+use function in_array;
 use function is_array;
 use function is_string;
 use function parse_url;
@@ -55,6 +59,7 @@ final class AdminActions
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly LoggerInterface $logger,
         private readonly SystemStatus $system,
+        private readonly PriceService $prices,
     ) {}
 
     /** Refresh stations, controllers, pumps and PTS/manual mode from Odoo. */
@@ -153,6 +158,60 @@ final class AdminActions
 
             return "Collection stopped for {$row['name']}.";
         });
+    }
+
+    /** Read the controller's current grade prices (read-only) and compare them with Odoo. */
+    public function readPrices(ServerRequestInterface $request, #[RouteArgument('id')] int $id): ResponseInterface
+    {
+        return $this->act($request, 'Read controller prices', function () use ($id): string {
+            $grades = $this->prices->readController($this->controllers->endpoint($this->priceControllerRow($id)));
+            $mismatch = array_filter($this->prices->compare($id), static fn(array $r): bool => $r['state'] === 'mismatch');
+
+            return implode(', ', array_map(static fn(array $g): string => sprintf('%s %.2f', $g['name'], $g['price']), $grades))
+                . ($mismatch === [] ? ': matches Odoo.' : ': ' . count($mismatch) . ' grade(s) differ from Odoo.');
+        });
+    }
+
+    /** Send Odoo's prices to the controller now and verify them (manual: may exceed the automatic change limit). */
+    public function pushPrices(ServerRequestInterface $request, #[RouteArgument('id')] int $id): ResponseInterface
+    {
+        return $this->act($request, 'Push prices', function () use ($id): string {
+            $result = $this->prices->push($id, 'dashboard', true);
+            if (!in_array($result['state'], ['verified', 'unchanged'], true)) {
+                throw new \RuntimeException($result['message']);
+            }
+
+            return $result['message'];
+        });
+    }
+
+    /** Opt a station in or out of automatic price pushes. */
+    public function autoPrices(ServerRequestInterface $request, #[RouteArgument('id')] int $id): ResponseInterface
+    {
+        return $this->act($request, 'Automatic price push', function () use ($request, $id): string {
+            $body = $request->getParsedBody();
+            $on = is_array($body) && ($body['on'] ?? '') === '1';
+            $this->db->createCommand()->update('stations', ['price_push_enabled' => $on ? 1 : 0], ['id' => $id])->execute();
+            $this->audit->record('prices', $id, $on ? 'auto_push_enabled' : 'auto_push_disabled', 'dashboard', $id);
+
+            return $on ? 'on: Odoo price changes reach the controller within about a minute and are verified.' : 'off.';
+        });
+    }
+
+    /** @return array<string, mixed> */
+    private function priceControllerRow(int $stationId): array
+    {
+        /** @var array<string, mixed>|null $row */
+        $row = (new Query($this->db))
+            ->select(['c.*', 'utc_offset_minutes' => 's.utc_offset_minutes'])
+            ->from(['c' => 'controllers'])->innerJoin(['s' => 'stations'], 's.id = c.station_id')
+            ->where(['c.station_id' => $stationId, 'c.odoo_active' => 1])
+            ->orderBy(['c.enabled' => SORT_DESC, 'c.is_primary' => SORT_DESC, 'c.id' => SORT_ASC])->one();
+        if ($row === null) {
+            throw new \RuntimeException('This station has no active PTS controller.');
+        }
+
+        return $row;
     }
 
     /** Apply pending database migrations (hosts without a shell). */

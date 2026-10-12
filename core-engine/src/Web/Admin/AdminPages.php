@@ -6,6 +6,9 @@ namespace App\Web\Admin;
 
 use App\Dashboard\DashboardQueries;
 use App\Maintenance\SystemStatus;
+use App\Price\PriceService;
+use Yiisoft\Db\Connection\ConnectionInterface;
+use Yiisoft\Db\Query\Query;
 use App\Reconciliation\VolumeReconciler;
 use DateTimeZone;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -32,6 +35,8 @@ final class AdminPages
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly FlashInterface $flash,
         private readonly SystemStatus $system,
+        private readonly PriceService $prices,
+        private readonly ConnectionInterface $db,
     ) {}
 
     /** Network: every station from Odoo, with collection status, today's sales and reconciliation where collected. */
@@ -137,6 +142,29 @@ final class AdminPages
         return $this->render('traffic', 'traffic', [
             'traffic' => $this->queries->traffic($minutes),
             'minutes' => $minutes,
+            'fmt' => new Fmt($stations === [] ? new DateTimeZone('UTC') : $this->queries->zone($stations[0])),
+        ]);
+    }
+
+    /** Prices: Odoo vs controller vs pumps vs latest sales, per station and grade (D25–D27). */
+    public function prices(): ResponseInterface
+    {
+        $stations = array_values(array_filter($this->queries->stations(), static fn(array $s): bool => $s['controller_id'] !== null));
+        $rows = [];
+        foreach ($stations as $station) {
+            $rows[(int) $station['id']] = $this->prices->compare((int) $station['id']);
+        }
+        /** @var list<array<string, mixed>> $pushes */
+        $pushes = (new Query($this->db))->select(['pp.*', 'station' => 's.name'])->from(['pp' => 'price_pushes'])
+            ->innerJoin(['s' => 'stations'], 's.id = pp.station_id')->orderBy(['pp.id' => SORT_DESC])->limit(30)->all();
+        /** @var array<int, string> $optedIn */
+        $optedIn = (new Query($this->db))->select('price_push_enabled')->from('stations')->indexBy('id')->column();
+
+        return $this->render('prices', 'prices', [
+            'stations' => $stations,
+            'rows' => $rows,
+            'pushes' => $pushes,
+            'optedIn' => $optedIn,
             'fmt' => new Fmt($stations === [] ? new DateTimeZone('UTC') : $this->queries->zone($stations[0])),
         ]);
     }

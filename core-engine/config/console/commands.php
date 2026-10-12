@@ -14,4 +14,5 @@ return [
     'recon:fills' => Console\ReconFillsCommand::class,
     'sync:run' => Console\SyncRunCommand::class,
     'secret:generate-key' => Console\SecretGenerateKeyCommand::class,
+    'prices:push' => Console\PricesPushCommand::class,
 ];

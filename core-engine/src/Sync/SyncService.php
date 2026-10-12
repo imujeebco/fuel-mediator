@@ -8,6 +8,7 @@ use App\Odoo\OdooException;
 use App\Odoo\OdooReadClientInterface;
 use App\Odoo\Sync\OdooSalesReader;
 use App\Odoo\Sync\OdooSessionsReader;
+use App\Price\PriceService;
 use App\Reconciliation\FillMatcher;
 use App\Shared\Clock;
 use Throwable;
@@ -37,13 +38,14 @@ final class SyncService
         private readonly OdooSessionsReader $sessions,
         private readonly FillMatcher $matcher,
         private readonly Clock $clock,
+        private readonly PriceService $prices,
     ) {}
 
     /**
      * @param int|null $stationId One station, or every active station with an Odoo company.
      * @param int $maxPages Sales pages (500 each) per station; keep small for interactive use.
      *
-     * @return list<array{station_id: int, station: string, sales: int, sessions: int, matched: ?int, unmatched: ?int, error: ?string}>
+     * @return list<array{station_id: int, station: string, sales: int, sessions: int, matched: ?int, unmatched: ?int, prices: ?string, error: ?string}>
      */
     public function run(?int $stationId = null, int $maxPages = 50): array
     {
@@ -59,11 +61,19 @@ final class SyncService
             $query->andWhere(['s.id' => $stationId]);
         }
 
+        // Odoo's station prices for the whole network in one read (D25).
+        $priceNote = null;
+        try {
+            $this->prices->pullOdooPrices($this->odoo);
+        } catch (Throwable $e) {
+            $priceNote = 'Odoo prices: ' . $e->getMessage();
+        }
+
         $results = [];
         /** @var array{id: string, name: string, odoo_company_id: string, collecting: ?string} $station */
         foreach ($query->all() as $station) {
             $id = (int) $station['id'];
-            $line = ['station_id' => $id, 'station' => $station['name'], 'sales' => 0, 'sessions' => 0, 'matched' => null, 'unmatched' => null, 'error' => null];
+            $line = ['station_id' => $id, 'station' => $station['name'], 'sales' => 0, 'sessions' => 0, 'matched' => null, 'unmatched' => null, 'prices' => $priceNote, 'error' => null];
             try {
                 $line['sales'] = $this->sales->pull($this->odoo, $id, (int) $station['odoo_company_id'], 2, $maxPages);
                 $line['sessions'] = $this->sessions->pull($this->odoo, $id);
@@ -76,6 +86,11 @@ final class SyncService
                     );
                     $line['matched'] = $match->confirmed + $match->probable;
                     $line['unmatched'] = $match->unmatchedFills;
+                }
+                try {
+                    $line['prices'] = $this->prices->check($id) ?? $line['prices'];
+                } catch (Throwable $e) {
+                    $line['prices'] = 'price check failed: ' . $e->getMessage();
                 }
                 $this->heartbeat($id);
             } catch (OdooException $e) {

@@ -65,6 +65,10 @@ final class PacketRouter
             $type = $packet['Type'];
             $id = $packet['Id'];
 
+            if (in_array($type, PacketPolicy::DEVICE_REFUSED_TYPES, true)) {
+                $replies[] = Packets::error($id, $type, 'Fuel prices are managed from Odoo; change them there');
+                continue;
+            }
             if (!PacketPolicy::allows(PacketPolicy::DEVICE, $type)) {
                 $replies[] = Packets::error($id, $type, 'Not supported by mediator');
                 continue;
@@ -105,7 +109,9 @@ final class PacketRouter
         $request = ['Type' => $type] + (isset($packet['Data']) ? ['Data' => $packet['Data']] : []);
         $ttl = in_array($type, self::CONFIG_TYPES, true) ? self::CONFIG_TTL_SECONDS
             : ($type === 'ProbeGetMeasurements' ? self::PROBE_TTL_SECONDS : 0);
-        $key = 'pts.' . $controller->id . '.' . hash('sha256', (string) json_encode($request));
+        // The generation changes when the engine changes the controller's prices, so cached configuration never
+        // outlives a price change (D26).
+        $key = 'pts.' . $controller->id . '.' . ConfigGeneration::get($this->cache, $controller->id) . '.' . hash('sha256', (string) json_encode($request));
 
         if ($ttl > 0) {
             /** @var mixed $hit */

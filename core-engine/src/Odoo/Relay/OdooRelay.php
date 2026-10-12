@@ -42,6 +42,7 @@ final class OdooRelay
         private readonly SaleObserver $sales,
         private readonly PumpsRewriter $rewriter,
         private readonly SettledFillFilter $settledFills,
+        private readonly PriceVersionFilter $priceVersion,
         private readonly Clock $clock,
         private readonly LoggerInterface $logger,
         private readonly string $odooUrl,
@@ -136,7 +137,9 @@ final class OdooRelay
         }
 
         if ($mode === RelayPolicy::FILTER && $outcome === 'ok' && $modelMethod !== null) {
-            $filtered = $this->settledFills->apply($modelMethod, $args, $response);
+            $filtered = $modelMethod === 'mobile_get_price_version'
+                ? $this->priceVersion->apply($args, $response)
+                : $this->settledFills->apply($modelMethod, $args, $response);
             if ($filtered !== null) {
                 return new RelayResponse(200, json_encode($filtered, JsonResponder::FLAGS));
             }

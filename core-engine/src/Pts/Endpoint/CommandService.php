@@ -7,6 +7,7 @@ namespace App\Pts\Endpoint;
 use App\Pts\ControllerEndpoint;
 use App\Pts\ControllerLock;
 use App\Pts\PacketPolicy;
+use App\Price\PriceService;
 use App\Pts\PtsClient;
 use App\Pts\PtsException;
 use App\Shared\Audit\AuditLog;
@@ -17,14 +18,18 @@ use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Exception\IntegrityException;
 use Yiisoft\Db\Query\Query;
 
+use function abs;
 use function bin2hex;
 use function hash;
 use function in_array;
 use function intdiv;
 use function is_array;
 use function is_int;
+use function is_numeric;
+use function is_string;
 use function json_decode;
 use function json_encode;
+use function number_format;
 use function random_bytes;
 use function sprintf;
 use function substr;
@@ -55,6 +60,7 @@ final class CommandService
         private readonly ControllerLock $lock,
         private readonly AuditLog $audit,
         private readonly Clock $clock,
+        private readonly PriceService $prices,
     ) {}
 
     /**
@@ -66,6 +72,7 @@ final class CommandService
     {
         $type = $packet['Type'];
         $id = $packet['Id'];
+        $packet = $this->correctAuthorizePrice($controller, $packet, $clientKey, $correlationId);
         $request = ['Type' => $type] + (isset($packet['Data']) ? ['Data' => $packet['Data']] : []);
         $isStop = in_array($type, self::STOP_TYPES, true);
         $pump = self::dataInt($packet, 'Pump');
@@ -251,5 +258,36 @@ final class CommandService
         $hex = bin2hex(random_bytes(16));
 
         return sprintf('%s-%s-4%s-%s-%s', substr($hex, 0, 8), substr($hex, 8, 4), substr($hex, 13, 3), substr($hex, 16, 4), substr($hex, 20, 12));
+    }
+
+    /**
+     * D26: a device authorizes with the price it last loaded from Odoo, which can be stale after a price change. The
+     * controller's current grade price (kept equal to Odoo by the price push) replaces it, so the pump never runs at
+     * an outdated price. The device's value is kept in the audit record.
+     *
+     * @param array{Id: int, Type: string, Data?: array<string, mixed>} $packet
+     *
+     * @return array{Id: int, Type: string, Data?: array<string, mixed>}
+     */
+    private function correctAuthorizePrice(ControllerEndpoint $controller, array $packet, string $clientKey, string $correlationId): array
+    {
+        if ($packet['Type'] !== 'PumpAuthorize' || !isset($packet['Data']['Price'])) {
+            return $packet;
+        }
+        $pump = self::dataInt($packet, 'Pump');
+        $devicePrice = $packet['Data']['Price'];
+        if ($pump === null || !is_numeric($devicePrice)) {
+            return $packet;
+        }
+        $price = $this->prices->authorizePrice($controller->id, $pump, self::dataInt($packet, 'Nozzle'));
+        if ($price === null || abs($price - (float) $devicePrice) < 0.0005) {
+            return $packet;
+        }
+        $corrected = number_format($price, 2, '.', '');
+        $packet['Data']['Price'] = is_string($devicePrice) ? $corrected : (float) $corrected;
+        $this->audit->record('command', $correlationId, 'price_corrected', $clientKey, $controller->stationId,
+            data: ['pump' => $pump, 'device_price' => $devicePrice, 'price' => $corrected]);
+
+        return $packet;
     }
 }

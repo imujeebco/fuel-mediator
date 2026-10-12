@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Odoo;
 
 use App\Odoo\Relay\OdooRelay;
+use App\Odoo\Relay\PriceVersionFilter;
 use App\Odoo\Relay\PumpsRewriter;
 use App\Odoo\Relay\SaleObserver;
 use App\Odoo\Relay\SettledFillFilter;
@@ -159,6 +160,7 @@ final class OdooRelayTest extends Unit
             new SaleObserver($this->db, $clock, new NullLogger()),
             new PumpsRewriter($this->db, $publicUrl),
             new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), true),
+            new PriceVersionFilter($this->db, new SettledFills($this->db, $clock), new NullLogger()),
             $clock,
             new NullLogger(),
             'https://odoo.test',

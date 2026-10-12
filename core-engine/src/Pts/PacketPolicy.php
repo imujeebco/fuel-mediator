@@ -18,11 +18,16 @@ final class PacketPolicy
     public const READ_ONLY = 'read_only';
     /** Packets a FuelPay device may send through the PTS-compatible endpoint (docs/api-compatibility-matrix.md §1). */
     public const DEVICE = 'device';
+    /** The engine's own price push (D25): reads plus SetFuelGradesPrices, nothing that moves a pump. */
+    public const PRICE_ADMIN = 'price_admin';
 
-    /** Physical or state-changing commands: journaled, sent once, never retried. */
+    /** Physical or state-changing commands from devices: journaled, sent once, never retried. */
     public const COMMAND_TYPES = [
-        'PumpAuthorize', 'PumpStop', 'PumpEmergencyStop', 'PumpSuspend', 'PumpResume', 'SetFuelGradesPrices',
+        'PumpAuthorize', 'PumpStop', 'PumpEmergencyStop', 'PumpSuspend', 'PumpResume',
     ];
+
+    /** Refused from devices: fuel prices are set from Odoo by the engine only (D27, revises D16). */
+    public const DEVICE_REFUSED_TYPES = ['SetFuelGradesPrices'];
 
     private const DEVICE_EXTRA_TYPES = ['PumpGetTotals', 'ProbeGetMeasurements'];
 
@@ -32,6 +37,7 @@ final class PacketPolicy
         'GetPumpsConfiguration',
         'GetPumpNozzlesConfiguration',
         'GetFuelGradesConfiguration',
+        'GetSystemDecimalDigits',
         'GetDateTime',
         'ReportGetPumpTransactions',
     ];
@@ -43,6 +49,7 @@ final class PacketPolicy
             self::DEVICE => in_array($packetType, self::READ_ONLY_TYPES, true)
                 || in_array($packetType, self::DEVICE_EXTRA_TYPES, true)
                 || in_array($packetType, self::COMMAND_TYPES, true),
+            self::PRICE_ADMIN => in_array($packetType, self::READ_ONLY_TYPES, true) || $packetType === 'SetFuelGradesPrices',
             default => false,
         };
     }
