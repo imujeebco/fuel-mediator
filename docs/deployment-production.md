@@ -22,7 +22,9 @@ The account also hosts other content (`public_html`, `odoo-files`); the mediator
 1. Subdomain `mediator.fuel.net.sa` (DNS A → the server), document root `/home/fuelne/fuel-mediator/core-engine/public`,
    Let's Encrypt certificate.
 2. MariaDB database + user (all privileges on that database).
-3. PHP 8.3 (or 8.2) for the subdomain with `bcmath`, `curl`, `pdo_mysql`, `sodium`, `mbstring`, `intl`.
+3. PHP 8.3 (or 8.2) for the subdomain with `bcmath`, `curl`, `pdo_mysql`, `sodium`, `mbstring`, `intl`. On cPanel /
+   LiteSpeed hosts `sodium` is often off by default: *Select PHP Version → Extensions*. If one is missing every page
+   answers "Composer detected issues in your platform" (before: a 500 right after login).
 4. Upload the zip to `/home/fuelne/` and extract it there → `/home/fuelne/fuel-mediator/`.
 5. Rename `core-engine/.env.cwp` to `core-engine/.env`; fill `DB_*`, `ODOO_USER`, `ODOO_PASSWORD`.
 

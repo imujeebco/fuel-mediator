@@ -38,7 +38,9 @@
         "ext-curl": "*",
         "ext-filter": "*",
         "ext-json": "*",
+        "ext-mbstring": "*",
         "ext-pdo_mysql": "*",
+        "ext-sodium": "*",
         "httpsoft/http-message": "^1.1.6",
         "psr/container": "^2.0.2",
         "psr/http-factory": "^1.1",
@@ -102,6 +104,7 @@
     "config": {
         "sort-packages": true,
         "bump-after-update": true,
+        "platform-check": true,
         "allow-plugins": {
             "yiisoft/config": true,
             "codeception/c3": true,

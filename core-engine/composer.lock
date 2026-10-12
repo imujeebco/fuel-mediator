@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4ec808d27d0978cae9b11e5de99d9a7c",
+    "content-hash": "f16214a9a276aea6a32975bab5324f4d",
     "packages": [
         {
             "name": "alexkart/curl-builder",
@@ -12394,12 +12394,12 @@
             "version": "v5.7.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/vlucas/phpdotenv.git",
+                "url": "https://github.com/phpdotenv/phpdotenv.git",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/vlucas/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
+                "url": "https://api.github.com/repos/phpdotenv/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40",
                 "shasum": ""
             },
@@ -12551,7 +12551,9 @@
         "ext-curl": "*",
         "ext-filter": "*",
         "ext-json": "*",
-        "ext-pdo_mysql": "*"
+        "ext-mbstring": "*",
+        "ext-pdo_mysql": "*",
+        "ext-sodium": "*"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"
