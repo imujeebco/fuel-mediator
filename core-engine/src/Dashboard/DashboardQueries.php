@@ -103,10 +103,10 @@ final class DashboardQueries
             foreach (['last_ok_at', 'last_error_at', 'last_error', 'consecutive_failures', 'circuit_open_until', 'poll_interval_ms', 'config_synced_at', 'odoo_active'] as $key) {
                 $station[$key] = $main[$key] ?? null;
             }
-            $ref = $main === null ? null : ((string) ($main['secret_ref'] ?? '') !== '' ? (string) $main['secret_ref']
-                : ($main['odoo_backend_config_id'] !== null ? SecretResolver::defaultRefFor((int) $main['odoo_backend_config_id']) : null));
-            $station['secret_ref'] = $ref;
-            $station['secret_ok'] = $main !== null && ($main['auth_mode'] === 'none' || ($ref !== null && $this->secrets->get($ref) !== null));
+            $station['secret_ref'] = $main === null ? null : SecretResolver::refFor($main);
+            $station['secret_source'] = $main === null ? null : ($main['auth_mode'] === 'none' ? 'none' : $this->secrets->sourceFor($main));
+            $station['secret_ok'] = $main !== null && $station['secret_source'] !== 'missing';
+            unset($station['controllers']);
         }
         unset($station);
 

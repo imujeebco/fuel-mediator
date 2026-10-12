@@ -83,12 +83,11 @@ final class ControllerRepository
         $authMode = (string) $row['auth_mode'];
         $password = '';
         if ($authMode !== 'none') {
-            $ref = (string) ($row['secret_ref'] ?? '');
-            if ($ref === '') {
-                $ref = SecretResolver::defaultRefFor((int) $row['odoo_backend_config_id']);
-            }
-            $password = $this->secrets->get($ref)
-                ?? throw new PtsException(PtsException::CONFIGURATION, sprintf('Secret "%s" for controller #%d is not set.', $ref, $id));
+            $password = $this->secrets->forController($row) ?? throw new PtsException(PtsException::CONFIGURATION, sprintf(
+                'No password for controller #%d: run "Sync stations from Odoo" with MEDIATOR_SECRET_KEY set, or set %s.',
+                $id,
+                SecretResolver::refFor($row),
+            ));
         }
 
         return new ControllerEndpoint(

@@ -101,7 +101,7 @@ foreach ($volumes as $report) {
                         <div class="muted small">meter <?= $fmt->age($snapshots[$id] ?? null) ?><?= $s['last_error'] && $fmt->ageSeconds($s['last_error_at']) < 1800 ? ' · ' . Fmt::e(mb_substr((string) $s['last_error'], 0, 40)) : '' ?></div>
                     <?php else: ?>
                         <?= Fmt::pill('Not collected', 'idle') ?>
-                        <?php if (!$s['secret_ok']): ?><div class="muted small">password missing (<?= Fmt::e($s['secret_ref']) ?>)</div><?php endif; ?>
+                        <div class="muted small"><?= $s['secret_ok'] ? 'password from ' . Fmt::e($s['secret_source'] === 'env' ? 'server env' : 'Odoo') : 'no password yet (Sync stations from Odoo)' ?></div>
                     <?php endif; ?>
                 </td>
                 <td class="small">

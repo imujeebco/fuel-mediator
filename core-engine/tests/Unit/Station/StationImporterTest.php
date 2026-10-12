@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Station;
 
 use App\Shared\Audit\AuditLog;
+use App\Pts\SecretResolver;
 use App\Shared\Clock;
+use App\Shared\Crypto\SecretBox;
 use App\Shared\Log\Redactor;
 use App\Station\Import\StationImporter;
 use App\Tests\Support\Fake\FakeOdooReadClient;
@@ -15,6 +17,7 @@ use Throwable;
 use Yiisoft\Db\Connection\ConnectionInterface;
 
 use function PHPUnit\Framework\assertSame;
+use function PHPUnit\Framework\assertStringStartsWith;
 use function PHPUnit\Framework\assertTrue;
 
 /**
@@ -108,9 +111,61 @@ final class StationImporterTest extends Unit
         assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM controllers'));
     }
 
-    private function importer(): StationImporter
+    /** D23: the controller password from Odoo is kept encrypted only, and the env variable still overrides it. */
+    public function testControllerPasswordIsStoredEncryptedNeverInPlaintext(): void
     {
-        return new StationImporter($this->db, new AuditLog($this->db, new Clock(), new Redactor()));
+        // Other tests' fixtures set PTS_PASSWORD_2 in $_ENV; it would override the stored password here.
+        $previous = $_ENV['PTS_PASSWORD_2'] ?? null;
+        unset($_ENV['PTS_PASSWORD_2']);
+        try {
+            $this->assertPasswordStoredEncrypted();
+        } finally {
+            if ($previous !== null) {
+                $_ENV['PTS_PASSWORD_2'] = $previous;
+            }
+        }
+    }
+
+    private function assertPasswordStoredEncrypted(): void
+    {
+        $box = new SecretBox(SecretBox::generateKey());
+        $result = $this->importer($box)->import($this->odoo());
+
+        assertSame(1, $result->secretsStored);
+        $stored = (string) $this->scalar('SELECT secret_encrypted FROM controllers WHERE odoo_backend_config_id = 2');
+        assertStringStartsWith('sb1:', $stored);
+        assertSame('pts-pass-11', $box->decrypt($stored));
+        assertSame(0, (int) $this->scalar("SELECT COUNT(*) FROM audit_events WHERE data LIKE '%pts-pass-11%'"), 'never in audit data');
+        assertSame(0, (int) $this->scalar("SELECT COUNT(*) FROM controllers WHERE CONCAT_WS('|', username, secret_ref, secret_encrypted) LIKE '%pts-pass-11%'"));
+
+        $this->importer($box)->import($this->odoo());
+        assertSame($stored, (string) $this->scalar('SELECT secret_encrypted FROM controllers WHERE odoo_backend_config_id = 2'), 'unchanged password is not rewritten');
+
+        /** @var array<string, mixed> $row */
+        $row = $this->db->createCommand('SELECT * FROM controllers WHERE odoo_backend_config_id = 2')->queryOne();
+        $resolver = new SecretResolver($box);
+        assertSame('pts-pass-11', $resolver->forController($row));
+        assertSame('odoo', $resolver->sourceFor($row));
+        $_ENV['PTS_PASSWORD_2'] = 'from-env';
+        try {
+            assertSame('from-env', $resolver->forController($row), 'environment overrides the stored password');
+        } finally {
+            unset($_ENV['PTS_PASSWORD_2']);
+        }
+    }
+
+    public function testWithoutKeyPasswordsAreNotStored(): void
+    {
+        $result = $this->importer()->import($this->odoo());
+
+        assertSame(0, $result->secretsStored);
+        assertSame(1, $result->secretsNoKey);
+        assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM controllers WHERE secret_encrypted IS NOT NULL'));
+    }
+
+    private function importer(?SecretBox $box = null): StationImporter
+    {
+        return new StationImporter($this->db, new AuditLog($this->db, new Clock(), new Redactor()), $box ?? new SecretBox(''), new Clock());
     }
 
     private function scalar(string $sql): mixed
@@ -129,7 +184,7 @@ final class StationImporterTest extends Unit
             'pts.backend.config' => [
                 ['id' => 2, 'name' => 'Station 11', 'active' => true, 'station_id' => [1, 'Fuel Station 11'], 'integration_mode' => 'direct',
                     'direct_pts_url' => 'https://station11.example/jsonPTS', 'backend_url' => false, 'direct_auth_mode' => 'digest',
-                    'direct_verify_ssl' => false, 'username' => 'admin', 'cfg_utc_offset' => 180],
+                    'direct_verify_ssl' => false, 'username' => 'admin', 'password' => 'pts-pass-11', 'cfg_utc_offset' => 180],
                 ['id' => 14, 'name' => 'Station 09 (old)', 'active' => false, 'station_id' => [5, 'Fuel Station 09'], 'integration_mode' => 'direct',
                     'direct_pts_url' => 'https://old.example/jsonPTS', 'backend_url' => false, 'direct_auth_mode' => 'digest',
                     'direct_verify_ssl' => false, 'username' => 'admin', 'cfg_utc_offset' => 0],

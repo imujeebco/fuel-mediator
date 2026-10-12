@@ -13,4 +13,5 @@ return [
     'recon:volume' => Console\ReconVolumeCommand::class,
     'recon:fills' => Console\ReconFillsCommand::class,
     'sync:run' => Console\SyncRunCommand::class,
+    'secret:generate-key' => Console\SecretGenerateKeyCommand::class,
 ];

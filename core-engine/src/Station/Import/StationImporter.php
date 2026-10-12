@@ -6,6 +6,8 @@ namespace App\Station\Import;
 
 use App\Odoo\OdooReadClientInterface;
 use App\Shared\Audit\AuditLog;
+use App\Shared\Clock;
+use App\Shared\Crypto\SecretBox;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Query\Query;
 
@@ -30,6 +32,8 @@ final class StationImporter
     public function __construct(
         private readonly ConnectionInterface $db,
         private readonly AuditLog $audit,
+        private readonly SecretBox $box,
+        private readonly Clock $clock,
     ) {}
 
     public function import(OdooReadClientInterface $odoo, bool $dryRun = false): ImportResult
@@ -45,7 +49,8 @@ final class StationImporter
             [],
             [
                 'id', 'name', 'active', 'station_id', 'integration_mode', 'direct_pts_url', 'backend_url',
-                'direct_auth_mode', 'direct_verify_ssl', 'username', 'cfg_utc_offset',
+                // `password` is stored encrypted only (D23); it never reaches logs, audit data or the import result.
+                'direct_auth_mode', 'direct_verify_ssl', 'username', 'password', 'cfg_utc_offset',
             ],
             context: self::ALL_RECORDS,
         );
@@ -88,7 +93,7 @@ final class StationImporter
 
                 foreach ($stationBackends as $backend) {
                     $isPrimary = $primary !== null && $primary['id'] === $backend['id'];
-                    $controllerIdsByBackend[(int) $backend['id']] = $this->upsertController($stationId, $backend, $isPrimary);
+                    $controllerIdsByBackend[(int) $backend['id']] = $this->upsertController($stationId, $backend, $isPrimary, $result);
                     $result->controllers++;
                 }
             }
@@ -167,7 +172,7 @@ final class StationImporter
     /**
      * @param array<string, mixed> $backend
      */
-    private function upsertController(int $stationId, array $backend, bool $isPrimary): int
+    private function upsertController(int $stationId, array $backend, bool $isPrimary, ImportResult $result): int
     {
         $backendId = (int) $backend['id'];
         $mode = (string) ($backend['integration_mode'] ?? 'direct');
@@ -191,8 +196,35 @@ final class StationImporter
             $synced,
         )->execute();
 
-        return (int) (new Query($this->db))->select('id')->from('controllers')
+        $controllerId = (int) (new Query($this->db))->select('id')->from('controllers')
             ->where(['odoo_backend_config_id' => $backendId])->scalar();
+        $this->storePassword($controllerId, $backend['password'] ?? null, $result);
+
+        return $controllerId;
+    }
+
+    /**
+     * D23: keep the controller password from Odoo, encrypted. Rewritten only when it changed in Odoo.
+     */
+    private function storePassword(int $controllerId, mixed $password, ImportResult $result): void
+    {
+        if (!is_string($password) || $password === '') {
+            return;
+        }
+        if (!$this->box->isConfigured()) {
+            $result->secretsNoKey++;
+            return;
+        }
+        $current = (new Query($this->db))->select('secret_encrypted')->from('controllers')->where(['id' => $controllerId])->scalar();
+        if (is_string($current) && $this->box->decrypt($current) === $password) {
+            $result->secretsStored++;
+            return;
+        }
+        $this->db->createCommand()->update('controllers', [
+            'secret_encrypted' => $this->box->encrypt($password),
+            'secret_updated_at' => $this->clock->nowForDb(),
+        ], ['id' => $controllerId])->execute();
+        $result->secretsStored++;
     }
 
     /**

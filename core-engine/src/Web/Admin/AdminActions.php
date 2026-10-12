@@ -62,7 +62,9 @@ final class AdminActions
             $result = $this->importer->import($this->odoo);
             $this->audit->record('registry', 'odoo', 'imported', 'dashboard', null, data: $result->toArray());
 
-            return sprintf('%d stations, %d controllers, %d pumps, %d nozzles updated from Odoo.', $result->stations, $result->controllers, $result->pumps, $result->nozzles);
+            return sprintf('%d stations, %d controllers, %d pumps, %d nozzles updated from Odoo; %d controller passwords stored encrypted%s.',
+                $result->stations, $result->controllers, $result->pumps, $result->nozzles, $result->secretsStored,
+                $result->secretsNoKey > 0 ? sprintf(' (%d not stored: MEDIATOR_SECRET_KEY is not set)', $result->secretsNoKey) : '');
         });
     }
 

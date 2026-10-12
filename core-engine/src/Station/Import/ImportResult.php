@@ -13,6 +13,10 @@ final class ImportResult
     public int $skippedPumps = 0;
     public int $skippedNozzles = 0;
     public bool $dryRun = false;
+    /** Controller passwords read from Odoo and stored encrypted (D23). */
+    public int $secretsStored = 0;
+    /** Controllers whose Odoo password could not be stored because MEDIATOR_SECRET_KEY is not set. */
+    public int $secretsNoKey = 0;
 
     /** @var list<array{odoo_id: int, name: string, active: bool, mode: string}> */
     public array $stationsDetail = [];
@@ -28,6 +32,8 @@ final class ImportResult
             'skipped_pumps' => $this->skippedPumps,
             'skipped_nozzles' => $this->skippedNozzles,
             'dry_run' => $this->dryRun,
+            'secrets_stored' => $this->secretsStored,
+            'secrets_no_key' => $this->secretsNoKey,
         ];
     }
 }

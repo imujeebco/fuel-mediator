@@ -72,8 +72,8 @@ $matchLabel = static fn(?string $state): string => match ($state) {
     <?php if ($ctrlId === null): ?>
         This station has no PTS controller in Odoo, so pumped litres cannot be measured; the figures below come from Odoo sales.
     <?php elseif (!$station['secret_ok']): ?>
-        The mediator does not read this controller yet: its password is not configured
-        (<code><?= Fmt::e($station['secret_ref']) ?></code> in the server environment, decision D17). Then read the pump setup and start collection.
+        The mediator does not read this controller yet: it has no password for it. Press <em>Sync stations from Odoo</em> on the Network page
+        (the server needs <code>MEDIATOR_SECRET_KEY</code>, decision D23), then read the pump setup and start collection.
     <?php else: ?>
         The mediator does not read this controller yet. Read the pump setup, then start collection to reconcile meters against sales.
     <?php endif; ?>
