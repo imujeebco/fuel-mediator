@@ -103,7 +103,7 @@ def main() -> int:
                 for name in dirs + files:
                     full = os.path.join(base, name)
                     rel = os.path.relpath(full, work).replace(os.sep, '/')
-                    if rel.startswith(EXCLUDE_PREFIXES) or rel in EXCLUDE_FILES:
+                    if (rel + '/').startswith(EXCLUDE_PREFIXES) or rel in EXCLUDE_FILES:
                         continue
                     arc = 'fuel-mediator/' + rel + ('/' if os.path.isdir(full) else '')
                     if os.path.isdir(full):
