@@ -35,7 +35,7 @@ return [
         ->routes(
             // Admin dashboard (docs/deployment-production.md: local-only on servers).
             Route::get('/')
-                ->action([Web\Admin\AdminPages::class, 'overview'])
+                ->action([Web\Admin\AdminPages::class, 'network'])
                 ->name('home'),
             Route::get('/station/{id:\d+}')
                 ->action([Web\Admin\AdminPages::class, 'station'])
@@ -49,5 +49,24 @@ return [
             Route::get('/traffic')
                 ->action([Web\Admin\AdminPages::class, 'traffic'])
                 ->name('admin/traffic'),
+            // Dashboard actions (POST + CSRF). Odoo and controllers are only read.
+            Route::post('/actions/stations/import')
+                ->action([Web\Admin\AdminActions::class, 'importStations'])
+                ->name('admin/action/import'),
+            Route::post('/actions/sync')
+                ->action([Web\Admin\AdminActions::class, 'syncAll'])
+                ->name('admin/action/sync'),
+            Route::post('/actions/station/{id:\d+}/sync')
+                ->action([Web\Admin\AdminActions::class, 'syncStation'])
+                ->name('admin/action/station-sync'),
+            Route::post('/actions/controller/{id:\d+}/config')
+                ->action([Web\Admin\AdminActions::class, 'syncConfig'])
+                ->name('admin/action/controller-config'),
+            Route::post('/actions/controller/{id:\d+}/enable')
+                ->action([Web\Admin\AdminActions::class, 'enableCollection'])
+                ->name('admin/action/controller-enable'),
+            Route::post('/actions/controller/{id:\d+}/disable')
+                ->action([Web\Admin\AdminActions::class, 'disableCollection'])
+                ->name('admin/action/controller-disable'),
         ),
 ];

@@ -11,9 +11,11 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Yiisoft\Router\HydratorAttribute\RouteArgument;
+use Yiisoft\Session\Flash\FlashInterface;
 use Yiisoft\Yii\View\Renderer\WebViewRenderer;
 
 use function in_array;
+use function is_array;
 use function is_string;
 
 /**
@@ -27,33 +29,35 @@ final class AdminPages
         private readonly DashboardQueries $queries,
         private readonly WebViewRenderer $viewRenderer,
         private readonly ResponseFactoryInterface $responseFactory,
+        private readonly FlashInterface $flash,
     ) {}
 
-    public function overview(ServerRequestInterface $request): ResponseInterface
+    /** Network: every station from Odoo, with collection status, today's sales and reconciliation where collected. */
+    public function network(ServerRequestInterface $request): ResponseInterface
     {
-        $windowKey = $this->windowKey($request);
-        $cards = [];
-        foreach ($this->queries->servedStations() as $station) {
-            $id = (int) $station['id'];
-            $window = $this->queries->window($station, $windowKey);
-            $devices = $this->queries->devices($id, $window['from']);
-            $exceptions = $this->queries->exceptions($id, $window['from']);
-            $cards[] = [
-                'station' => $station,
-                'fmt' => new Fmt($this->queries->zone($station)),
-                'window' => $window,
-                'volume' => $this->queries->volume($id, $window['from'], $window['to']),
-                'lastSnapshot' => $this->queries->lastSnapshotAt($id),
-                'pumps' => $this->queries->pumps($id),
-                'devicesOnline' => count(array_filter($devices, static fn(array $d): bool => (bool) $d['online'])),
-                'devicesViaMediator' => count(array_filter($devices, static fn(array $d): bool => $d['via_mediator'] !== null)),
-                'devicesTotal' => count($devices),
-                'exceptions' => $exceptions,
-                'issueCounts' => $this->queries->issueCounts($id),
-            ];
+        $showInactive = ($request->getQueryParams()['all'] ?? '') === '1';
+        $stations = $this->queries->stations($showInactive);
+        $zone = $stations === [] ? new DateTimeZone('+03:00') : $this->queries->zone($stations[0]);
+        $today = $this->queries->window($stations[0] ?? ['id' => 0, 'utc_offset_minutes' => 180], 'today');
+
+        $volumes = [];
+        foreach ($stations as $station) {
+            if ($station['collecting']) {
+                $window = $this->queries->window($station, 'today');
+                $volumes[(int) $station['id']] = $this->queries->volume((int) $station['id'], $window['from'], $window['to']);
+            }
         }
 
-        return $this->render('overview', 'overview', ['cards' => $cards, 'windowKey' => $windowKey]);
+        return $this->render('network', 'network', [
+            'stations' => $stations,
+            'sales' => $this->queries->salesByStation($today['from']),
+            'sessions' => $this->queries->openSessionsByStation(),
+            'issues' => $this->queries->issueCountsByStation(),
+            'snapshots' => $this->queries->lastSnapshotByStation(),
+            'volumes' => $volumes,
+            'showInactive' => $showInactive,
+            'fmt' => new Fmt($zone),
+        ]);
     }
 
     public function station(ServerRequestInterface $request, #[RouteArgument('id')] int $id): ResponseInterface
@@ -63,35 +67,45 @@ final class AdminPages
             return $this->responseFactory->createResponse(404);
         }
         $window = $this->queries->window($station, $this->windowKey($request));
+        $collecting = (bool) $station['collecting'];
 
         return $this->render('station', 'station:' . $id, [
             'station' => $station,
             'fmt' => new Fmt($this->queries->zone($station)),
             'window' => $window,
-            'volume' => $this->queries->volume($id, $window['from'], $window['to']),
-            'byPump' => $this->queries->volume($id, $window['from'], $window['to'], VolumeReconciler::BY_PUMP),
-            'pumps' => $this->queries->pumps($id),
-            'fills' => $this->queries->recentFills($id, $window['from']),
+            'collecting' => $collecting,
+            'volume' => $collecting ? $this->queries->volume($id, $window['from'], $window['to']) : null,
+            'byPump' => $collecting ? $this->queries->volume($id, $window['from'], $window['to'], VolumeReconciler::BY_PUMP) : null,
+            'pumps' => $collecting ? $this->queries->pumps($id) : [],
+            'fills' => $collecting ? $this->queries->recentFills($id, $window['from']) : [],
             'exceptions' => $this->queries->exceptions($id, $window['from']),
-            'lastSnapshot' => $this->queries->lastSnapshotAt($id),
+            'salesByGrade' => $this->queries->salesByGrade($id, $window['from']),
+            'sessions' => $this->queries->sessions($id, $window['from']),
+            'devices' => $this->queries->devices($id, $window['from']),
+            'lastSnapshot' => $collecting ? $this->queries->lastSnapshotAt($id) : null,
         ]);
     }
 
     public function devices(ServerRequestInterface $request): ResponseInterface
     {
         $windowKey = $this->windowKey($request, 'today');
+        $query = $request->getQueryParams();
+        $only = isset($query['station']) && $query['station'] !== '' ? (int) $query['station'] : null;
         $groups = [];
-        foreach ($this->queries->servedStations() as $station) {
+        $all = $this->queries->stations();
+        foreach ($all as $station) {
+            if ($only !== null && (int) $station['id'] !== $only) {
+                continue;
+            }
             $window = $this->queries->window($station, $windowKey);
-            $groups[] = [
-                'station' => $station,
-                'fmt' => new Fmt($this->queries->zone($station)),
-                'window' => $window,
-                'devices' => $this->queries->devices((int) $station['id'], $window['from']),
-            ];
+            $devices = $this->queries->devices((int) $station['id'], $window['from']);
+            if ($devices === [] && $only === null) {
+                continue; // no activity: keep the network list short
+            }
+            $groups[] = ['station' => $station, 'fmt' => new Fmt($this->queries->zone($station)), 'window' => $window, 'devices' => $devices];
         }
 
-        return $this->render('devices', 'devices', ['groups' => $groups, 'windowKey' => $windowKey]);
+        return $this->render('devices', 'devices', ['groups' => $groups, 'windowKey' => $windowKey, 'stations' => $all, 'only' => $only]);
     }
 
     public function issues(ServerRequestInterface $request): ResponseInterface
@@ -100,7 +114,7 @@ final class AdminPages
         $rawType = $query['type'] ?? null;
         $type = is_string($rawType) ? $rawType : null;
         $stationId = isset($query['station']) && $query['station'] !== '' ? (int) $query['station'] : null;
-        $stations = $this->queries->servedStations();
+        $stations = $this->queries->stations();
 
         return $this->render('issues', 'issues', [
             'issues' => $this->queries->issues($stationId, $type),
@@ -116,7 +130,7 @@ final class AdminPages
     {
         $query = $request->getQueryParams();
         $minutes = in_array($query['m'] ?? '60', ['15', '60', '240', '1440'], true) ? (int) ($query['m'] ?? 60) : 60;
-        $stations = $this->queries->servedStations();
+        $stations = $this->queries->stations();
 
         return $this->render('traffic', 'traffic', [
             'traffic' => $this->queries->traffic($minutes),
@@ -135,10 +149,17 @@ final class AdminPages
     /** @param array<string, mixed> $params */
     private function render(string $view, string $active, array $params): ResponseInterface
     {
+        $flash = $this->flash->get(AdminActions::FLASH);
+
         return $this->viewRenderer
             ->withLayout(__DIR__ . '/layout.php')
             ->render(__DIR__ . '/views/' . $view, $params + [
-                'adminNav' => ['stations' => $this->queries->servedStations(), 'active' => $active, 'refresh' => true],
+                'adminNav' => [
+                    'collecting' => array_values(array_filter($this->queries->stations(), static fn(array $s): bool => (bool) $s['collecting'])),
+                    'active' => $active,
+                    'refresh' => true,
+                    'flash' => is_array($flash) ? $flash : null,
+                ],
             ]);
     }
 }

@@ -10,6 +10,8 @@ use App\Web\Admin\Fmt;
  * @var array $adminNav
  * @var list<array{station: array<string, mixed>, fmt: Fmt, window: array<string, mixed>, devices: list<array<string, mixed>>}> $groups
  * @var string $windowKey
+ * @var list<array<string, mixed>> $stations
+ * @var int|null $only
  */
 
 $this->setTitle('Devices');
@@ -24,7 +26,18 @@ $this->setParameter('adminNav', $adminNav);
             Online = activity in the last <?= DashboardQueries::ONLINE_SECONDS / 60 ?> minutes.
         </div>
     </div>
-    <?= $this->render(__DIR__ . '/_window.php', ['windowKey' => $windowKey, 'base' => '/devices']) ?>
+    <div class="actions">
+        <form class="filter" method="get" action="/devices">
+            <input type="hidden" name="w" value="<?= Fmt::e($windowKey) ?>">
+            <select name="station" onchange="this.form.submit()">
+                <option value="">All stations with activity</option>
+                <?php foreach ($stations as $s): ?>
+                    <option value="<?= (int) $s['id'] ?>" <?= $only === (int) $s['id'] ? 'selected' : '' ?>><?= Fmt::e($s['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+        <?= $this->render(__DIR__ . '/_window.php', ['windowKey' => $windowKey, 'base' => '/devices']) ?>
+    </div>
 </div>
 
 <?php foreach ($groups as $g):

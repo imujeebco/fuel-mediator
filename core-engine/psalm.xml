@@ -40,12 +40,6 @@
                 <file name="src/Web/Admin/layout.php" />
             </errorLevel>
         </MixedOperand>
-        <MixedMethodCall>
-            <errorLevel type="suppress">
-                <directory name="src/Web/Admin/views" />
-                <file name="src/Web/Admin/layout.php" />
-            </errorLevel>
-        </MixedMethodCall>
         <PossiblyUndefinedArrayOffset>
             <errorLevel type="suppress">
                 <directory name="src/Web/Admin/views" />

@@ -14,9 +14,10 @@ use App\Web\Admin\Fmt;
  */
 
 $params = $this->getParameter('adminNav', []);
-$stations = $params['stations'] ?? [];
+$stations = $params['collecting'] ?? [];
 $active = $params['active'] ?? '';
 $refresh = $params['refresh'] ?? true;
+$flash = $params['flash'] ?? null;
 
 $this->beginPage();
 ?>
@@ -74,6 +75,16 @@ $this->beginPage();
         .pill.idle { color: var(--idle); background: var(--idle-bg); }
         .tabs { display: flex; gap: 6px; } .tabs a { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; color: var(--fg); }
         .tabs a.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn { display: inline-block; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        form.inline { display: inline; margin: 0; }
+        .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .flash { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--line); }
+        .flash.ok { background: var(--ok-bg); color: var(--ok); } .flash.bad { background: var(--bad-bg); color: var(--bad); }
+        tr.inactive td { opacity: .55; }
         .pumps { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
         .pump { border-left: 4px solid var(--idle); }
         .pump.filling { border-left-color: var(--info); } .pump.nozzle { border-left-color: var(--warn); }
@@ -93,7 +104,7 @@ $this->beginPage();
     <div class="in">
         <span class="brand">FuelPay Mediator</span>
         <nav>
-            <a href="/" class="<?= $active === 'overview' ? 'on' : '' ?>">Overview</a>
+            <a href="/" class="<?= $active === 'network' ? 'on' : '' ?>">Network</a>
             <?php foreach ($stations as $s): ?>
                 <a href="/station/<?= (int) $s['id'] ?>" class="<?= $active === 'station:' . $s['id'] ? 'on' : '' ?>"><?= Fmt::e($s['name']) ?></a>
             <?php endforeach; ?>
@@ -107,6 +118,9 @@ $this->beginPage();
     </div>
 </header>
 <main>
+    <?php if (is_array($flash)): ?>
+        <div class="flash <?= Fmt::e($flash['tone'] ?? 'ok') ?>"><?= Fmt::e($flash['text'] ?? '') ?></div>
+    <?php endif; ?>
     <?= $content ?>
 </main>
 <?php if ($refresh): ?>
@@ -116,6 +130,11 @@ $this->beginPage();
     let on = true;
     try { on = localStorage.getItem(key) !== 'off'; } catch (e) {}
     const btn = document.getElementById('rf-toggle'), label = document.getElementById('rf-label');
+    // A pressed action button shows progress and stops the page from reloading under it.
+    document.querySelectorAll('form[data-action]').forEach(f => f.addEventListener('submit', () => {
+        on = false; clearTimeout(timer);
+        f.querySelectorAll('button').forEach(b => { b.disabled = true; b.textContent = b.dataset.busy || 'Working…'; });
+    }));
     let timer = null;
     const apply = () => {
         btn.textContent = on ? 'Pause' : 'Resume';

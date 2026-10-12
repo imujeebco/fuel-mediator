@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Dashboard;
 
+use App\Pts\SecretResolver;
 use App\Reconciliation\VolumeReconciler;
 use App\Reconciliation\VolumeReport;
 use App\Shared\Clock;
@@ -35,6 +36,7 @@ final class DashboardQueries
         private readonly ConnectionInterface $db,
         private readonly VolumeReconciler $reconciler,
         private readonly Clock $clock,
+        private readonly SecretResolver $secrets,
     ) {}
 
     /**
@@ -58,16 +60,184 @@ final class DashboardQueries
             ->all();
     }
 
-    /** @return array<string, mixed>|null */
+    /**
+     * Every station from the Odoo registry with its main controller: the collecting one if any, else the primary,
+     * else the first. `mode` (pts | manual) comes from Odoo (backend config active or not, D9/D14).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function stations(bool $includeInactive = false): array
+    {
+        $query = (new Query($this->db))
+            ->select(['s.id', 's.code', 's.name', 's.mode', 's.mode_override', 's.active', 's.odoo_station_id', 's.odoo_company_id',
+                's.odoo_company_name', 's.utc_offset_minutes'])
+            ->from(['s' => 'stations'])
+            ->orderBy(['s.active' => SORT_DESC, 's.name' => SORT_ASC, 's.id' => SORT_ASC]);
+        if (!$includeInactive) {
+            $query->where(['s.active' => 1]);
+        }
+        /** @var list<array<string, mixed>> $stations */
+        $stations = $query->all();
+
+        /** @var list<array<string, mixed>> $controllers */
+        $controllers = (new Query($this->db))
+            ->select(['c.*', 'pumps' => new Expression('(SELECT COUNT(*) FROM pumps p WHERE p.controller_id = c.id AND p.on_controller = 1)')])
+            ->from(['c' => 'controllers'])
+            ->orderBy(['c.enabled' => SORT_DESC, 'c.is_primary' => SORT_DESC, 'c.id' => SORT_ASC])
+            ->all();
+        $byStation = [];
+        foreach ($controllers as $controller) {
+            $byStation[(int) $controller['station_id']][] = $controller;
+        }
+
+        foreach ($stations as &$station) {
+            $list = $byStation[(int) $station['id']] ?? [];
+            $main = $list[0] ?? null;
+            $station['controllers'] = $list;
+            $station['controller_id'] = $main['id'] ?? null;
+            $station['controller_name'] = $main['name'] ?? null;
+            $station['url'] = $main['url'] ?? null;
+            $station['odoo_backend_config_id'] = $main['odoo_backend_config_id'] ?? null;
+            $station['collecting'] = $main !== null && (int) $main['enabled'] === 1;
+            $station['pumps'] = $main['pumps'] ?? 0;
+            foreach (['last_ok_at', 'last_error_at', 'last_error', 'consecutive_failures', 'circuit_open_until', 'poll_interval_ms', 'config_synced_at', 'odoo_active'] as $key) {
+                $station[$key] = $main[$key] ?? null;
+            }
+            $ref = $main === null ? null : ((string) ($main['secret_ref'] ?? '') !== '' ? (string) $main['secret_ref']
+                : ($main['odoo_backend_config_id'] !== null ? SecretResolver::defaultRefFor((int) $main['odoo_backend_config_id']) : null));
+            $station['secret_ref'] = $ref;
+            $station['secret_ok'] = $main !== null && ($main['auth_mode'] === 'none' || ($ref !== null && $this->secrets->get($ref) !== null));
+        }
+        unset($station);
+
+        return $stations;
+    }
+
+    /** @return array<string, mixed>|null Any station, collecting or not. */
     public function station(int $stationId): ?array
     {
-        foreach ($this->servedStations() as $station) {
+        foreach ($this->stations(true) as $station) {
             if ((int) $station['id'] === $stationId) {
                 return $station;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Sales figures per station since $fromUtc (fuel sales only), from the Odoo mirror.
+     *
+     * @return array<int, array<string, mixed>> station id => figures
+     */
+    public function salesByStation(string $fromUtc): array
+    {
+        $onlineSince = $this->clock->now()->modify('-' . self::ONLINE_SECONDS . ' seconds')->format('Y-m-d H:i:s.v');
+        /** @var list<array<string, mixed>> $rows */
+        $rows = (new Query($this->db))
+            ->select([
+                'station_id',
+                'sales' => new Expression("SUM(payment_status = 'APPROVED')"),
+                'litres' => new Expression("SUM(IF(payment_status = 'APPROVED', volume, 0))"),
+                'amount' => new Expression("SUM(IF(payment_status = 'APPROVED', amount, 0))"),
+                'pending' => new Expression("SUM(payment_status = 'PENDING')"),
+                'flagged' => new Expression("SUM(match_state IN ('sale_without_fill', 'duplicate_candidate'))"),
+                'with_tx' => new Expression("SUM(pts_transaction_id IS NOT NULL AND pts_transaction_id <> '')"),
+                'last_sale_at' => new Expression('MAX(sale_created_at)'),
+                'devices' => new Expression('COUNT(DISTINCT terminal_id)'),
+                'devices_online' => new Expression('COUNT(DISTINCT IF(sale_created_at >= :online, terminal_id, NULL))', [':online' => $onlineSince]),
+            ])
+            ->from('odoo_sales')
+            ->where(['>=', 'sale_created_at', $fromUtc])
+            ->andWhere(['or', ['fuel_name' => null], ['<>', 'fuel_name', 'Shop']])
+            ->groupBy('station_id')
+            ->all();
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['station_id']] = $row;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Open POS sessions per station (mirrored from Odoo).
+     *
+     * @return array<int, list<array<string, mixed>>>
+     */
+    public function openSessionsByStation(): array
+    {
+        /** @var list<array<string, mixed>> $rows */
+        $rows = (new Query($this->db))->select(['station_id', 'odoo_session_id', 'name', 'odoo_pos_config_id', 'state', 'start_at'])
+            ->from('pos_sessions')->where(['not in', 'state', ['closed']])
+            ->andWhere(['>=', 'start_at', $this->clock->now()->modify('-3 days')->format('Y-m-d H:i:s.v')])
+            ->orderBy(['start_at' => SORT_ASC])->all();
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['station_id']][] = $row;
+        }
+
+        return $result;
+    }
+
+    /** @return array<int, int> station id => open issues */
+    public function issueCountsByStation(): array
+    {
+        /** @var list<array{station_id: string, n: string}> $rows */
+        $rows = (new Query($this->db))->select(['station_id', 'n' => new Expression('COUNT(*)')])->from('discrepancies')
+            ->where(['status' => 'open'])->groupBy('station_id')->all();
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['station_id']] = (int) $row['n'];
+        }
+
+        return $result;
+    }
+
+    /** @return array<int, string> station id => latest meter snapshot (UTC) */
+    public function lastSnapshotByStation(): array
+    {
+        /** @var list<array{station_id: string, t: string}> $rows */
+        $rows = (new Query($this->db))->select(['station_id', 't' => new Expression('MAX(observed_at)')])->from('meter_snapshots')
+            ->groupBy('station_id')->all();
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(int) $row['station_id']] = $row['t'];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Sales by grade for stations without meter data (sales-only view).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function salesByGrade(int $stationId, string $fromUtc): array
+    {
+        /** @var list<array<string, mixed>> */
+        return (new Query($this->db))
+            ->select(['fuel_name', 'sales' => new Expression('COUNT(*)'), 'litres' => new Expression('SUM(volume)'),
+                'amount' => new Expression('SUM(amount)'), 'cash' => new Expression("SUM(IF(payment_method = 'CASH', amount, 0))"),
+                'card' => new Expression("SUM(IF(payment_method = 'CARD', amount, 0))")])
+            ->from('odoo_sales')
+            ->where(['station_id' => $stationId, 'payment_status' => 'APPROVED'])
+            ->andWhere(['>=', 'sale_created_at', $fromUtc])
+            ->groupBy('fuel_name')->orderBy(['fuel_name' => SORT_ASC])->all();
+    }
+
+    /**
+     * POS sessions of a station overlapping the window.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function sessions(int $stationId, string $fromUtc): array
+    {
+        /** @var list<array<string, mixed>> */
+        return (new Query($this->db))->from('pos_sessions')
+            ->where(['station_id' => $stationId])
+            ->andWhere(['or', ['stop_at' => null], ['>=', 'stop_at', $fromUtc]])
+            ->orderBy(['start_at' => SORT_DESC])->all();
     }
 
     public function zone(array $station): DateTimeZone

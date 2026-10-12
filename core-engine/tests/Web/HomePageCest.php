@@ -13,6 +13,6 @@ final class HomePageCest
         $I->wantTo('home page works.');
         $I->amOnPage('/');
         $I->expectTo('see page home.');
-        $I->see('Overview');
+        $I->see('Network');
     }
 }

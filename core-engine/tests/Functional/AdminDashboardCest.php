@@ -17,7 +17,7 @@ final class AdminDashboardCest
 {
     public function pagesRender(FunctionalTester $tester): void
     {
-        foreach (['/' => 'Overview', '/devices' => 'Devices', '/issues' => 'Open issues', '/traffic' => 'Traffic'] as $path => $heading) {
+        foreach (['/' => 'Network', '/devices' => 'Devices', '/issues' => 'Open issues', '/traffic' => 'Traffic'] as $path => $heading) {
             $response = $tester->sendRequest(new ServerRequest(uri: $path));
             $body = $response->getBody()->getContents();
 
