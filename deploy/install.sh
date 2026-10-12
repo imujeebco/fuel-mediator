@@ -67,20 +67,24 @@ ODOO_PASSWORD=
 
 RETENTION_DAYS=90
 
-# PTS controller secrets: PTS_PASSWORD_<odoo backend config id> (fill in)
-PTS_PASSWORD_2=
+# Optional per-controller password overrides: PTS_PASSWORD_<odoo backend config id>=...
+# (normally read from Odoo and stored encrypted, D23)
 
 # Leave EMPTY until the go-live switch (docs/deployment-production.md). Setting it redirects devices' PTS traffic.
 MEDIATOR_PUBLIC_URL=
 
 # D21: report fills already paid by another sale as paid ("0" = off)
 SETTLED_FILL_FILTER=1
+
+# D23: encrypts controller passwords read from Odoo. Keep it secret and backed up; losing it only means
+# running "Sync stations from Odoo" again.
+MEDIATOR_SECRET_KEY=$(php -r 'echo base64_encode(sodium_crypto_secretbox_keygen());')
 EOF
-    echo "   wrote $CORE/.env — fill in ODOO_USER, ODOO_PASSWORD and PTS_PASSWORD_2, then run this script again"
+    echo "   wrote $CORE/.env — fill in ODOO_USER and ODOO_PASSWORD, then run this script again"
 fi
 chown fuelmed:fuelmed "$CORE/.env"
 chmod 600 "$CORE/.env"
-if grep -qE '^(ODOO_USER|ODOO_PASSWORD|PTS_PASSWORD_2)=$' "$CORE/.env"; then
+if grep -qE '^(ODOO_USER|ODOO_PASSWORD)=$' "$CORE/.env"; then
     echo "!! $CORE/.env is incomplete; stopping before migrations"
     exit 1
 fi

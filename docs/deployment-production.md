@@ -54,8 +54,8 @@ Later updates: `SERVER=root@<ip> bash deploy/push.sh --apply` (composer, migrati
 cd /opt/fuel-mediator/core-engine
 sudo -u fuelmed php yii station:import --dry-run
 sudo -u fuelmed php yii station:import
-sudo -u fuelmed php yii controller sync-config 2
-sudo -u fuelmed php yii controller enable 2 --poll-ms=10000
+sudo -u fuelmed php yii controller sync-config 2      # or the dashboard: Read pump setup
+sudo -u fuelmed php yii controller enable 2 --poll-ms=10000   # or the dashboard: Start collection
 systemctl restart fuel-mediator-collector
 ```
 **Stop the laptop collector** once the server collector runs, so the controller is not polled twice.
@@ -80,7 +80,8 @@ writing snapshots (`/health/stations` through the tunnel) and that `journalctl -
 The admin dashboard (`/`, through the SSH tunnel) shows every station: PTS or manual mode from Odoo, collection
 status, today's sales, open sessions, devices, pumped vs sold where collected, issues. Buttons: *Sync stations from
 Odoo*, *Run sync now*, and per station *Sync*, *Read pump setup*, *Start/Stop collection* (audited in `audit_events`).
-A controller can only be collected once its password is in the environment (`PTS_PASSWORD_<backend id>`, D17).
+Controller passwords come from Odoo with *Sync stations from Odoo* and are stored encrypted with `MEDIATOR_SECRET_KEY`
+(D23; `install.sh` generates the key). To collect a station: *Read pump setup*, then *Start collection*.
 
 Through the tunnel or `mysql fuel_mediator`:
 ```sql
