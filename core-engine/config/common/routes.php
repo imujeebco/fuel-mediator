@@ -33,8 +33,21 @@ return [
         ->middleware(SessionMiddleware::class)
         ->middleware(CsrfTokenMiddleware::class)
         ->routes(
+            // Admin dashboard (docs/deployment-production.md: local-only on servers).
             Route::get('/')
-                ->action(Web\HomePage\Action::class)
+                ->action([Web\Admin\AdminPages::class, 'overview'])
                 ->name('home'),
+            Route::get('/station/{id:\d+}')
+                ->action([Web\Admin\AdminPages::class, 'station'])
+                ->name('admin/station'),
+            Route::get('/devices')
+                ->action([Web\Admin\AdminPages::class, 'devices'])
+                ->name('admin/devices'),
+            Route::get('/issues')
+                ->action([Web\Admin\AdminPages::class, 'issues'])
+                ->name('admin/issues'),
+            Route::get('/traffic')
+                ->action([Web\Admin\AdminPages::class, 'traffic'])
+                ->name('admin/traffic'),
         ),
 ];

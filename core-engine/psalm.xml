@@ -21,5 +21,42 @@
     <issueHandlers>
         <MixedAssignment errorLevel="suppress" />
         <RiskyTruthyFalsyComparison errorLevel="suppress" />
+        <!-- Admin view templates read loosely typed row arrays by design; classes stay at level 1. -->
+        <MixedArrayAccess>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </MixedArrayAccess>
+        <MixedArgument>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </MixedArgument>
+        <MixedOperand>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </MixedOperand>
+        <MixedMethodCall>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </MixedMethodCall>
+        <PossiblyUndefinedArrayOffset>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </PossiblyUndefinedArrayOffset>
+        <InvalidScope>
+            <errorLevel type="suppress">
+                <directory name="src/Web/Admin/views" />
+                <file name="src/Web/Admin/layout.php" />
+            </errorLevel>
+        </InvalidScope>
     </issueHandlers>
 </psalm>
