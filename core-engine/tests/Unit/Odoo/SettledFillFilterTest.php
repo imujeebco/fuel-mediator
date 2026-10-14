@@ -7,6 +7,7 @@ namespace App\Tests\Unit\Odoo;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PriceVersionFilter;
 use App\Odoo\Relay\PumpsRewriter;
+use App\Odoo\Relay\ResponseCache;
 use App\Odoo\Relay\SaleObserver;
 use App\Odoo\Relay\SettledFillFilter;
 use App\Reconciliation\FillMatcher;
@@ -22,6 +23,7 @@ use Codeception\Test\Unit;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Log\NullLogger;
+use Yiisoft\Cache\ArrayCache;
 use Yiisoft\Db\Connection\ConnectionInterface;
 
 use function array_column;
@@ -44,6 +46,7 @@ final class SettledFillFilterTest extends Unit
 
     private ConnectionInterface $db;
     private FakeHttpTransport $transport;
+    private ?ArrayCache $responseCache = null;
     private int $stationId;
     private int $controllerId;
     private int $saleSeq = 0;
@@ -269,6 +272,7 @@ final class SettledFillFilterTest extends Unit
             new PumpsRewriter($this->db, ''),
             new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), $enabled, $live ? new LiveSettlements($this->db, $clock) : null),
             new PriceVersionFilter($this->db, new SettledFills($this->db, $clock), new NullLogger()),
+            new ResponseCache($this->responseCache ??= new ArrayCache()),
             $clock,
             new NullLogger(),
             'https://odoo.test',

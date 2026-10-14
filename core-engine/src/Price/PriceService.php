@@ -8,6 +8,7 @@ use App\Odoo\OdooReadClientInterface;
 use App\Pts\ControllerEndpoint;
 use App\Pts\ControllerLock;
 use App\Pts\ControllerRepository;
+use App\Odoo\Relay\ResponseCache;
 use App\Pts\Endpoint\ConfigGeneration;
 use App\Pts\PacketPolicy;
 use App\Pts\PtsClient;
@@ -397,6 +398,7 @@ final class PriceService
         if ($changed) {
             $this->db->createCommand()->update('stations', ['prices_changed_at' => $now], ['id' => $controller->stationId])->execute();
             ConfigGeneration::bump($this->cache, $controller->id);
+            ResponseCache::invalidate($this->cache); // D29: cached bootstrap answers carry prices
         }
     }
 

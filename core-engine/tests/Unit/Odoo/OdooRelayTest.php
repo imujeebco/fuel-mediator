@@ -7,6 +7,7 @@ namespace App\Tests\Unit\Odoo;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PriceVersionFilter;
 use App\Odoo\Relay\PumpsRewriter;
+use App\Odoo\Relay\ResponseCache;
 use App\Odoo\Relay\SaleObserver;
 use App\Odoo\Relay\SettledFillFilter;
 use App\Reconciliation\SettledFills;
@@ -19,6 +20,7 @@ use App\Tests\Support\PtsFixture;
 use App\Tests\Support\TestDatabase;
 use Codeception\Test\Unit;
 use Psr\Log\NullLogger;
+use Yiisoft\Cache\ArrayCache;
 use Yiisoft\Db\Connection\ConnectionInterface;
 
 use function PHPUnit\Framework\assertCount;
@@ -26,11 +28,13 @@ use function PHPUnit\Framework\assertNull;
 use function PHPUnit\Framework\assertSame;
 use function PHPUnit\Framework\assertStringContainsString;
 use function PHPUnit\Framework\assertStringNotContainsString;
+use function str_replace;
 
 final class OdooRelayTest extends Unit
 {
     private ConnectionInterface $db;
     private FakeHttpTransport $transport;
+    private ?ArrayCache $responseCache = null;
 
     protected function _before(): void
     {
@@ -118,6 +122,46 @@ final class OdooRelayTest extends Unit
         assertSame($stationId, $this->scalar("SELECT station_id FROM sale_observations WHERE uuid = 'u-6'"));
     }
 
+    /** D29: the payment sheet's bootstrap answer is served from the cache, under the caller's id, objects intact. */
+    public function testBootstrapIsServedFromTheCacheUnderTheCallersId(): void
+    {
+        $this->transport->queue(new HttpResult(200, '{"jsonrpc":"2.0","id":7,"result":{"products":[{"id":1,"price":2.18}],"payment_methods":{}}}', 20));
+
+        $this->relay()->handle($this->rpc(7, 'pos.config', 'pts_api_bootstrap_proxy', [[58]]), '10.0.0.5', 'c');
+        $second = $this->relay()->handle($this->rpc(8, 'pos.config', 'pts_api_bootstrap_proxy', [[58]]), '10.0.0.6', 'd');
+
+        assertCount(1, $this->transport->requests, 'second call answered by the mediator');
+        assertSame('{"jsonrpc":"2.0","id":8,"result":{"products":[{"id":1,"price":2.18}],"payment_methods":{}}}', $second->body);
+        assertSame('cached', $this->scalar('SELECT outcome FROM relay_calls ORDER BY id DESC LIMIT 1'));
+    }
+
+    public function testCachedAnswersAreKeptPerCredentialsAndErrorsAreNotCached(): void
+    {
+        $this->transport
+            ->queueJson(['jsonrpc' => '2.0', 'id' => 1, 'error' => ['message' => 'Odoo Server Error', 'data' => ['message' => 'FTP 421']]])
+            ->queueJson(['jsonrpc' => '2.0', 'id' => 2, 'result' => [['id' => 3, 'name' => 'Ali']]])
+            ->queueJson(['jsonrpc' => '2.0', 'id' => 3, 'result' => [['id' => 3, 'name' => 'Ali']]]);
+
+        $this->relay()->handle($this->rpc(1, 'pos.config', 'mobile_list_employees', [[58]]), '10.0.0.5', 'c');
+        $this->relay()->handle($this->rpc(2, 'pos.config', 'mobile_list_employees', [[58]]), '10.0.0.5', 'c');
+        $otherPassword = str_replace('device-secret', 'other-secret', $this->rpc(3, 'pos.config', 'mobile_list_employees', [[58]]));
+        $this->relay()->handle($otherPassword, '10.0.0.5', 'c');
+
+        assertCount(3, $this->transport->requests, 'error not cached; other credentials never served a cached answer');
+    }
+
+    public function testPriceChangeInvalidatesCachedAnswers(): void
+    {
+        $answer = ['jsonrpc' => '2.0', 'id' => 7, 'result' => ['products' => [['id' => 1, 'price' => 2.18]]]];
+        $this->transport->queueJson($answer)->queueJson($answer);
+
+        $this->relay()->handle($this->rpc(7, 'pos.config', 'pts_api_bootstrap_proxy', [[58]]), '10.0.0.5', 'c');
+        ResponseCache::invalidate($this->responseCache ?? new ArrayCache());
+        $this->relay()->handle($this->rpc(7, 'pos.config', 'pts_api_bootstrap_proxy', [[58]]), '10.0.0.5', 'c');
+
+        assertCount(2, $this->transport->requests);
+    }
+
     /** Test scenario 9: Odoo unavailable during a completed sale — the mediator never acknowledges it itself. */
     public function testOdooTimeoutReturnsRetryableErrorAndKeepsTheAttempt(): void
     {
@@ -193,6 +237,7 @@ final class OdooRelayTest extends Unit
             new PumpsRewriter($this->db, $publicUrl),
             new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), true),
             new PriceVersionFilter($this->db, new SettledFills($this->db, $clock), new NullLogger()),
+            new ResponseCache($this->responseCache ??= new ArrayCache()),
             $clock,
             new NullLogger(),
             'https://odoo.test',

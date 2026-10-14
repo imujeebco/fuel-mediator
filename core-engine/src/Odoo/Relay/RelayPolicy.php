@@ -55,6 +55,13 @@ final class RelayPolicy
         'whatsapp.message' => ['create' => self::PASS, 'action_send_now' => self::PASS],
     ];
 
+    /**
+     * D29: read-only answers that block the payment screen, kept this many seconds (ResponseCache).
+     *
+     * @var array<string, int>
+     */
+    private const CACHE_SECONDS = ['pts_api_bootstrap_proxy' => 60, 'mobile_list_employees' => 300];
+
     /** Methods whose device read timeout is 60 s instead of 15 s. */
     private const LONG_METHODS = ['mobile_open_shift', 'mobile_close_shift'];
 
@@ -69,6 +76,12 @@ final class RelayPolicy
                 : null,
             default => null,
         };
+    }
+
+    /** Seconds a successful answer may be served from the mediator's cache; 0 = never cached. */
+    public static function cacheSeconds(?string $modelMethod): int
+    {
+        return $modelMethod === null ? 0 : (self::CACHE_SECONDS[$modelMethod] ?? 0);
     }
 
     /** Upstream timeout, kept below the device's own read timeout so the device always gets an answer. */

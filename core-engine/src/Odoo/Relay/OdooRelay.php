@@ -43,6 +43,7 @@ final class OdooRelay
         private readonly PumpsRewriter $rewriter,
         private readonly SettledFillFilter $settledFills,
         private readonly PriceVersionFilter $priceVersion,
+        private readonly ResponseCache $responses,
         private readonly Clock $clock,
         private readonly LoggerInterface $logger,
         private readonly string $odooUrl,
@@ -71,6 +72,18 @@ final class OdooRelay
 
         if ($this->odooUrl === '') {
             return RelayResponse::rpcError($rpcId, 'mediator.Unavailable', 'Odoo relay not configured (503); try again later');
+        }
+
+        // D29: a recent identical answer (same credentials and arguments) is served without the Odoo round trip.
+        if ($mode === RelayPolicy::PASS) {
+            $cached = $this->responses->get($modelMethod, $args);
+            /** @var mixed $envelope */
+            $envelope = $cached === null ? null : json_decode($cached);
+            if ($envelope instanceof \stdClass) {
+                $envelope->id = $rpcId;
+                $this->journalCall($mode, $correlationId, $service, $model, $method, $rpcId, 'cached', null, 0, $params, null);
+                return new RelayResponse(200, json_encode($envelope, JsonResponder::FLAGS));
+            }
         }
 
         $started = hrtime(true);
@@ -128,6 +141,10 @@ final class OdooRelay
             $mode === RelayPolicy::JOURNAL ? $response : null,
         );
         $this->sales->observe($modelMethod, $args, $response, $relayCallId);
+
+        if ($mode === RelayPolicy::PASS && $outcome === 'ok' && is_array($response['result'] ?? null)) {
+            $this->responses->set($modelMethod, $args, $body);
+        }
 
         if ($mode === RelayPolicy::REWRITE && $outcome === 'ok') {
             $rewritten = $this->rewriter->rewrite($response);
