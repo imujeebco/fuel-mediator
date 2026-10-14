@@ -62,6 +62,8 @@ final class CollectorRunCommand extends Command
         }
 
         $lastResolve = 0.0;
+        /** @var array<int, string> $openReported controller => circuit_open_until already printed */
+        $openReported = [];
         try {
             do {
                 // Unknown command outcomes are resolved from the evidence the collector just gathered.
@@ -74,6 +76,14 @@ final class CollectorRunCommand extends Command
                 }
                 $outcomes = $this->runner->runOnce($stationIds, ignoreInterval: $once);
                 foreach ($outcomes as $controllerId => $outcome) {
+                    // The loop runs every 0.5 s: report an open circuit once per open period, not twice a second.
+                    if ($outcome['status'] === 'circuit_open') {
+                        $until = (string) ($outcome['until'] ?? '');
+                        if (($openReported[$controllerId] ?? null) === $until) {
+                            continue;
+                        }
+                        $openReported[$controllerId] = $until;
+                    }
                     $output->writeln(
                         $this->runner->clock()->now()->format('H:i:s') . " controller #$controllerId "
                         . (json_encode($outcome, JSON_UNESCAPED_SLASHES) ?: '{}'),
