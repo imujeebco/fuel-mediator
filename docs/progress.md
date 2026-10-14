@@ -227,3 +227,52 @@ Open follow-ups, added to the list above:
 - Duplicate rule independent of `created_at`: pump + litres + amount within the shift, using the fill's tx.
 - An outage reconciliation list: fills dispensed while Odoo was down.
 - A relay timeout above Odoo's worst case.
+
+## Development round from the 2026-10-14/15 observation (local commits, awaiting review before push)
+
+The user approved these on 2026-10-15 and asked to review before any push. Production is not deployed.
+
+| Commit | Change |
+|---|---|
+| fix(relay) POS-config station | Devices are linked to their station through the sale's POS config. Before, Station 11's relayed devices showed as "Not linked". |
+| fix(collector) circuit log | An open circuit is logged once per open period, not twice a second. |
+| fix(collector) meter_gap | A single fill missed between polls is rebuilt from the meter totals (new source `meter_gap`, migration 000012). Before, it was dropped when the visible transaction was a zero-volume lift (pump 9 tx 4811). |
+| feat(recon) duplicates | Duplicate payments are found whatever the late payment's timestamp. Rules: the sale names a fill another sale already paid (high severity); or same pump and amount in the same POS session; or the previous 15-min rule. |
+| feat(relay) D28 | Live settlement: a PTS fill paid by a manual sale of the same grade is reported paid at once (`live_settlements`, migration 000013, `SETTLED_FILL_LIVE`). |
+| feat(relay) D29 | Short-lived cache for `pts_api_bootstrap_proxy` and `mobile_list_employees` (outcome `cached`, migration 000014). |
+| fix(collector) collector_gap | Fills missed during a collector outage (pump unread for over 5 min) become a `collector_gap` issue, and overlapping windows show partial coverage. This removes the +32,425 L artefact seen on production. |
+| feat(dashboard) outages | The Traffic page lists Odoo outages and the fills from them still without a sale. |
+
+Also pushed earlier on 2026-10-14/15:
+- 18db510: a sale naming a known fill is never fingerprinted to another fill; the tx rule now reaches 12 h back.
+- 258e5e6: prepaid sales are linked; the lead window is now measured from the fill start.
+
+Tests: Unit Odoo 30, Reconciliation 19, Collector 12, Dashboard 2, Price 4 and Pts 23, all OK; Psalm clean on all changed files.
+- The full suite was not run in one go: it crashed local MySQL 8.4.3 on `TRUNCATE TABLE stations` on 2026-10-14.
+
+Not changed, by design:
+- The relay timeout stays at 13 s. It must stay below FuelPay's own 15 s read timeout, so the device always gets an answer.
+
+Findings for others (not mediator code):
+
+| Owner | Finding |
+|---|---|
+| FuelPay app | About 9 blocking Odoo calls per card sale, all serialized on one queue, roughly 18–20 s of waiting. Proposal: one atomic "claim fill" call before the payment screen, no server calls during payment, registration through the existing retry queue. |
+| FuelPay app | "Cancel & Enter Manually" only navigates back. Manual entry should record the pump. |
+| FuelPay app | Manual mode is only the persisted `pts_enabled` switch. Odoo's `mobile_offline_mode` is never read. |
+| Odoo | When a PTS sale arrives, link it to an unlinked APPROVED manual sale of the same config, pump/grade and amount within 30 min, instead of creating a new PENDING record. This is the authoritative version of D28. |
+| Odoo | `mobile_list_employees` attachment 6334 is stored on FTP and fails with "421 Too many connections". |
+| Odoo.sh | Two maintenance windows during trading hours: 15:01–15:12 and 16:23–16:33. |
+| Station 11 | The controller link via Cloudflare (`station11.fuel.net.sa`) times out about every 5 min in the evening. |
+
+Duplicate payments seen at Station 11 since 2026-10-14 13:24, SAR 379.62 in total. Check them at the shift close.
+
+| Pump | Amount | Payments |
+|---|---|---|
+| 15 | SAR 124.94 | card + cash |
+| 18 | SAR 50 | card + cash |
+| 9 | SAR 86 | two cards |
+| 10 | SAR 88.68 | card + cash |
+| 17 | SAR 30 | card + cash |
+
+Observer note: this laptop's battery is at 5% and the PC sleeps (18:00–22:14 and 01:07–01:18). Local fill coverage has gaps there.
