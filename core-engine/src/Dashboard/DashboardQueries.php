@@ -16,9 +16,12 @@ use Yiisoft\Db\Query\Query;
 
 use function abs;
 use function array_map;
+use function array_reverse;
+use function in_array;
 use function intdiv;
 use function is_array;
 use function json_decode;
+use function preg_match;
 use function sprintf;
 use function usort;
 
@@ -510,7 +513,7 @@ final class DashboardQueries
     /**
      * Relay traffic and pump commands over the last $minutes.
      *
-     * @return array{relay: list<array<string, mixed>>, commands: list<array<string, mixed>>, errors: list<array<string, mixed>>, failedCommands: list<array<string, mixed>>}
+     * @return array{relay: list<array<string, mixed>>, commands: list<array<string, mixed>>, errors: list<array<string, mixed>>, failedCommands: list<array<string, mixed>>, outages: list<array{start: string, end: ?string, failures: int, fills: list<array<string, mixed>>}>}
      */
     public function traffic(int $minutes): array
     {
@@ -532,7 +535,7 @@ final class DashboardQueries
         /** @var list<array<string, mixed>> $errors */
         $errors = (new Query($this->db))
             ->select(['created_at', 'model', 'method', 'outcome', 'error_message', 'latency_ms', 'correlation_id'])
-            ->from('relay_calls')->where(['>=', 'created_at', $since])->andWhere(['<>', 'outcome', 'ok'])
+            ->from('relay_calls')->where(['>=', 'created_at', $since])->andWhere(['not in', 'outcome', ['ok', 'cached']])
             ->orderBy(['created_at' => SORT_DESC])->limit(50)->all();
 
         /** @var list<array<string, mixed>> $failedCommands */
@@ -542,6 +545,66 @@ final class DashboardQueries
             ->andWhere(['state' => ['failed', 'outcome_unknown', 'needs_review']])
             ->orderBy(['received_at' => SORT_DESC])->limit(50)->all();
 
-        return ['relay' => $relay, 'commands' => $commands, 'errors' => $errors, 'failedCommands' => $failedCommands];
+        return ['relay' => $relay, 'commands' => $commands, 'errors' => $errors, 'failedCommands' => $failedCommands,
+            'outages' => $this->odooOutages($since)];
+    }
+
+    /**
+     * Periods when Odoo did not answer relayed calls (HTTP 5xx, timeouts, connection failures; business errors do not
+     * count), with the controller fills that ended meanwhile and still have no sale. During an outage FuelPay cannot
+     * show unpaid fills or authorize pumps, so attendants take payment outside the app (live 2026-10-14: two Odoo.sh
+     * maintenance windows, five fills without a sale): this is the station's list to reconcile.
+     *
+     * @return list<array{start: string, end: ?string, failures: int, fills: list<array<string, mixed>>}>
+     */
+    public function odooOutages(string $sinceUtc, int $minFailures = 5): array
+    {
+        /** @var list<array{created_at: string, outcome: string, error_message: ?string}> $calls */
+        $calls = (new Query($this->db))->select(['created_at', 'outcome', 'error_message'])->from('relay_calls')
+            ->where(['>=', 'created_at', $sinceUtc])->andWhere(['not in', 'outcome', ['cached', 'denied']])
+            ->orderBy(['created_at' => SORT_ASC, 'id' => SORT_ASC])->all();
+
+        /** @var list<array{start: string, end: ?string, failures: int, fills: list<array<string, mixed>>}> $outages */
+        $outages = [];
+        /** @var array{start: string, end: ?string, failures: int, fills: list<array<string, mixed>>}|null $open */
+        $open = null;
+        foreach ($calls as $call) {
+            $failed = in_array($call['outcome'], ['timeout', 'transport_error'], true)
+                || ($call['outcome'] === 'odoo_error' && preg_match('/^(HTTP 5\d\d|Non-JSON answer)$/', (string) $call['error_message']) === 1);
+            if ($failed) {
+                if ($open === null) {
+                    $open = ['start' => $call['created_at'], 'end' => null, 'failures' => 0, 'fills' => []];
+                }
+                $open['failures'] += 1;
+            } elseif ($call['outcome'] === 'ok' && $open !== null) {
+                $open['end'] = $call['created_at'];
+                $outages[] = $open;
+                $open = null;
+            }
+        }
+        if ($open !== null) {
+            $outages[] = $open;
+        }
+
+        $result = [];
+        foreach ($outages as $outage) {
+            if ($outage['failures'] < $minFailures) {
+                continue;
+            }
+            $end = $outage['end'] ?? $this->clock->now()->format('Y-m-d H:i:s.v');
+            /** @var list<array<string, mixed>> $fills */
+            $fills = (new Query($this->db))
+                ->select(['station' => 's.name', 'f.pump_number', 'f.pts_transaction_no', 'f.fuel_name', 'f.volume', 'f.amount', 'f.ended_at', 'f.state'])
+                ->from(['f' => 'fill_events'])->innerJoin(['s' => 'stations'], 's.id = f.station_id')
+                ->where(['f.state' => ['observed', 'unmatched', 'ambiguous']])
+                ->andWhere(['between', 'f.ended_at',
+                    (new DateTimeImmutable($outage['start'] . ' UTC'))->modify('-2 minutes')->format('Y-m-d H:i:s.v'),
+                    (new DateTimeImmutable($end . ' UTC'))->modify('+2 minutes')->format('Y-m-d H:i:s.v')])
+                ->orderBy(['s.name' => SORT_ASC, 'f.ended_at' => SORT_ASC])->all();
+            $outage['fills'] = $fills;
+            $result[] = $outage;
+        }
+
+        return array_reverse($result);
     }
 }

@@ -7,14 +7,14 @@ use App\Web\Admin\Fmt;
 /**
  * @var Yiisoft\View\WebView $this
  * @var array $adminNav
- * @var array{relay: list<array<string, mixed>>, commands: list<array<string, mixed>>, errors: list<array<string, mixed>>, failedCommands: list<array<string, mixed>>} $traffic
+ * @var array{relay: list<array<string, mixed>>, commands: list<array<string, mixed>>, errors: list<array<string, mixed>>, failedCommands: list<array<string, mixed>>, outages: list<array{start: string, end: ?string, failures: int, fills: list<array<string, mixed>>}>} $traffic
  * @var int $minutes
  * @var Fmt $fmt
  */
 
 $this->setTitle('Traffic');
 $this->setParameter('adminNav', $adminNav);
-$outcomeTone = static fn(string $o): string => match ($o) { 'ok' => 'ok', 'denied' => 'warn', default => 'bad' };
+$outcomeTone = static fn(string $o): string => match ($o) { 'ok', 'cached' => 'ok', 'denied' => 'warn', default => 'bad' };
 $stateTone = static fn(string $s): string => match ($s) {
     'confirmed', 'resolved_executed' => 'ok', 'resolved_not_executed', 'received', 'queued', 'sent' => 'idle', default => 'bad',
 };
@@ -42,6 +42,27 @@ $total = array_sum(array_map(static fn(array $r): int => (int) $r['n'], $traffic
                 <td class="n"><?= (int) $r['n'] ?></td><td class="n"><?= Fmt::num($r['avg_ms']) ?></td><td class="n"><?= Fmt::num($r['max_ms']) ?></td><td><?= $fmt->age($r['last_at']) ?></td></tr>
         <?php endforeach; ?></tbody>
     </table></div>
+    <?php endif; ?>
+</section>
+
+<section class="card">
+    <h2>Odoo outages (<?= count($traffic['outages']) ?>)</h2>
+    <div class="muted small">Odoo did not answer (5xx, timeouts). Devices could not show unpaid fills or authorize pumps, so payments may
+        have been taken outside the app. The fills below ended meanwhile and still have no sale: reconcile them with the cashier.</div>
+    <?php if ($traffic['outages'] === []): ?><div class="empty">None in this period.</div><?php else: ?>
+    <?php foreach ($traffic['outages'] as $o): ?>
+        <h3><?= $fmt->time($o['start']) ?> – <?= $o['end'] === null ? 'ongoing' : $fmt->time($o['end']) ?>
+            <span class="muted small">· <?= $o['failures'] ?> failed calls · <?= count($o['fills']) ?> fill(s) without a sale</span></h3>
+        <?php if ($o['fills'] !== []): ?>
+        <div class="frame"><table>
+            <thead><tr><th>Station</th><th class="n">Pump</th><th>PTS tx</th><th>Grade</th><th class="n">Litres</th><th class="n">SAR</th><th>Ended</th></tr></thead>
+            <tbody><?php foreach ($o['fills'] as $f): ?>
+                <tr><td><?= Fmt::e($f['station']) ?></td><td class="n"><?= Fmt::e($f['pump_number']) ?></td><td><?= Fmt::e($f['pts_transaction_no']) ?></td>
+                    <td><?= Fmt::e($f['fuel_name']) ?></td><td class="n"><?= Fmt::e($f['volume']) ?></td><td class="n"><?= Fmt::e($f['amount']) ?></td><td><?= $fmt->time($f['ended_at']) ?></td></tr>
+            <?php endforeach; ?></tbody>
+        </table></div>
+        <?php endif; ?>
+    <?php endforeach; ?>
     <?php endif; ?>
 </section>
 
