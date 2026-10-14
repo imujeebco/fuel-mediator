@@ -157,3 +157,39 @@ Built:
 Tests: Unit 90 OK, Functional 8 OK, Psalm clean. Web suite needs a running server (unchanged).
 
 Next: server access → install → registry → smoke test → switch devices (runbook §5).
+
+## Live observation from a clean log (2026-10-14, from 13:24:48 local / 10:24:48 UTC)
+
+The local instance reads Odoo directly. Devices reach Odoo through the production mediator (fuelksa.iwebcrux.com), which runs the same code. The local transactional tables were truncated at the start (backup: `fuel-scratpad/backups/fuel_mediator_before_reset_20261014.sql`), and sales cursors were set to the reset time. Snapshots every 5 min: `fuel-scratpad/observe_snapshot.sh` → `fuel-scratpad/observation.log`.
+
+Station 11 (PTS mode):
+- About 97% of sales carry a PTS transaction number, and app-authorized sales (`manual_sale=0`) match their fills exactly.
+- Other terminals complete a PENDING sale on the same Odoo record.
+- One orphan PENDING twin: aqib, pump 15, SAR 124.94 (Odoo 516977) next to its APPROVED sale 516980. This is the D21 pattern.
+- A fill left PENDING can be paid much later (70 min seen), and FuelPay then rewrites `created_at`.
+
+**Fixed (18db510):** a sale that named a known fill could be taken by an earlier fill of the same amount, which shifted the links down the chain. Rebuilt: 70 links, 66 by tx, 0 contradicting.
+
+Odoo.sh maintenance, 15:01–15:12 local (HTTP 503):
+- The production relay answered devices in about 0.5 s with `odoo_error`. Devices kept polling about 4 calls/s.
+- One sale reached Odoo 40 s after recovery.
+- Two fills from mid-outage (pump 7 SAR 65, pump 17 SAR 30) still had no sale at the time of writing.
+
+Production findings (read-only look, 13:25):
+- Collector cron last ran about 46 h ago, and the sync cron is irregular.
+  - This makes Station 11 show +32,425 L "pumped − sold": a 46 h meter jump is booked as fills between polls.
+  - It also produces about 1,000 sale/fill issues.
+- `APP_DEBUG` is on.
+- Station 11 devices using the relay appear as "Not linked to a station": FuelPay omits `station_id` when `odooStationId` is unset.
+
+Local environment:
+- MySQL 8.4.3 (Laragon) crashed with an access violation on `TRUNCATE TABLE stations` during the full unit suite. InnoDB recovered with no data loss.
+- Don't run the full suite while observing.
+
+Open follow-ups:
+- Production cron and `APP_DEBUG`.
+- Raise a meter jump across a collector outage as `collector_gap`, not volume.
+- Link devices through `pos_config_id` when `station_id` is missing.
+- Log the circuit breaker once per open/close, not twice a second.
+- Optional: short-circuit relay calls for a few seconds after an Odoo 503.
+- Deploy 18db510.
