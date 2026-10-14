@@ -157,6 +157,38 @@ final class FillMatcherTest extends Unit
         assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM discrepancies'));
     }
 
+    /**
+     * Live finding 2026-10-14 (pump 9, SAR 86): a manual card sale paid the fill, then the PTS record of the same fill
+     * was approved by card 42 min later. Two card charges for one fill.
+     */
+    public function testSaleNamingAFillAnotherSalePaidIsAHighDuplicate(): void
+    {
+        $this->fill(1, 4784, '39.450', '86.00', '04:22:54');
+        $this->sale(1, '39.450', '86.00', '04:23:13', rrn: '123997508952');               // manual card sale
+        // The sync runs every minute: the manual sale is linked long before the PTS record is paid again.
+        $this->matcher('04:24:00')->match($this->stationId, '2026-10-11 04:00:00', '2026-10-11 04:24:00');
+        $this->sale(1, '39.450', '86.00', '05:05:16', tx: '4784', rrn: '122282880422');   // the PTS record, paid again
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 04:00:00', '2026-10-11 05:59:00');
+
+        assertSame(1, $result->duplicateCandidates);
+        assertSame('high', $this->scalar("SELECT severity FROM discrepancies WHERE type = 'duplicate_candidate'"));
+        assertSame(1, (int) $this->scalar("SELECT COUNT(*) FROM discrepancies WHERE type = 'duplicate_candidate' AND summary LIKE '%already paid%'"));
+    }
+
+    /** Live finding 2026-10-14 (pump 15, SAR 124.94): card at 13:34, the leftover PENDING record paid in cash 2 h later. */
+    public function testLatePaymentInTheSameSessionIsADuplicateWhateverItsTime(): void
+    {
+        $this->fill(1, 3385, '57.310', '124.94', '01:33:08');
+        $this->sale(1, '57.312', '124.94', '01:34:06', rrn: '123578772204', session: 43125);
+        $this->sale(1, '57.312', '124.94', '03:41:51', session: 43125);
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 01:00:00', '2026-10-11 05:00:00');
+
+        assertSame(1, $result->duplicateCandidates);
+        assertSame(0, $result->salesWithoutFill);
+    }
+
     public function testRerunIsIdempotent(): void
     {
         $this->fill(1, 101, '20.000', '43.60', '04:10:00');
@@ -188,7 +220,7 @@ final class FillMatcherTest extends Unit
         return (int) $this->db->getLastInsertId();
     }
 
-    private function sale(int $pump, string $volume, string $amount, string $createdUtc, ?string $tx = null, ?string $rrn = null): void
+    private function sale(int $pump, string $volume, string $amount, string $createdUtc, ?string $tx = null, ?string $rrn = null, ?int $session = null): void
     {
         $id = ++$this->saleSeq;
         $this->db->createCommand()->insert('odoo_sales', [
@@ -196,7 +228,7 @@ final class FillMatcherTest extends Unit
             'fuel_name' => $pump === 2 ? 'A 95' : 'A 91',
             'volume' => $volume, 'amount' => $amount, 'payment_status' => 'APPROVED', 'payment_method' => $rrn ? 'CARD' : 'CASH',
             'rrn' => $rrn, 'manual_sale' => 1, 'pts_transaction_id' => $tx, 'sale_created_at' => "2026-10-11 $createdUtc",
-            'odoo_write_date' => "2026-10-11 $createdUtc",
+            'odoo_write_date' => "2026-10-11 $createdUtc", 'odoo_pos_session_id' => $session,
         ])->execute();
     }
 

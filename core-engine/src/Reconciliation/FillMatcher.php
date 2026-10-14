@@ -32,8 +32,8 @@ use function sprintf;
  *   4. amount ±0.05 only, exactly one candidate                      → probable (fingerprint)
  *   5. otherwise, once the grace period has passed                   → unmatched_fill discrepancy
  * Amount and time alone never yield "confirmed". After matching, APPROVED sales on controller pumps left without a
- * fill past the grace period become `sale_without_fill`; if an identical sale of the same grade was linked within
- * 15 minutes it is a `duplicate_candidate` (manual sale after a timeout + PTS sale). Detect and report only (D2).
+ * fill past the grace period become `sale_without_fill`, or `duplicate_candidate` when another linked sale probably
+ * paid the same fill (see twin(): named fill already paid, same pump + amount in the session, or the 15-min rule). Detect and report only (D2).
  */
 final class FillMatcher
 {
@@ -167,9 +167,10 @@ final class FillMatcher
 
         $grades = (new Query($this->db))->select('fuel_name')->distinct()->from('nozzles')
             ->where(['station_id' => $stationId, 'on_controller' => 1]);
-        /** @var list<array{id: string, pump_number: ?string, fuel_name: ?string, volume: string, amount: string, sale_created_at: string, uuid: string, payment_method: ?string, rrn: ?string}> $sales */
+        /** @var list<array{id: string, pump_number: ?string, fuel_name: ?string, volume: string, amount: string, sale_created_at: string, uuid: string, payment_method: ?string, rrn: ?string, pts_transaction_id: ?string, odoo_pos_session_id: ?string}> $sales */
         $sales = (new Query($this->db))
-            ->select(['s.id', 's.pump_number', 's.fuel_name', 's.volume', 's.amount', 's.sale_created_at', 's.uuid', 's.payment_method', 's.rrn'])
+            ->select(['s.id', 's.pump_number', 's.fuel_name', 's.volume', 's.amount', 's.sale_created_at', 's.uuid', 's.payment_method', 's.rrn',
+                's.pts_transaction_id', 's.odoo_pos_session_id'])
             ->from(['s' => 'odoo_sales'])
             ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED', 's.match_state' => 'unlinked'])
             ->andWhere(['in', 's.fuel_name', $grades])
@@ -177,16 +178,9 @@ final class FillMatcher
             ->all();
 
         foreach ($sales as $sale) {
-            $createdAt = new DateTimeImmutable($sale['sale_created_at'] . ' UTC');
-            $twinId = (new Query($this->db))->select('id')->from('odoo_sales')
-                ->where(['station_id' => $stationId, 'fuel_name' => $sale['fuel_name'], 'match_state' => 'linked', 'amount' => $sale['amount']])
-                ->andWhere(['between', 'sale_created_at',
-                    $createdAt->modify('-' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v'),
-                    $createdAt->modify('+' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
-                ->andWhere(['not', ['id' => (int) $sale['id']]])
-                ->scalar();
+            [$twinId, $paidFill] = $this->twin($stationId, $sale);
 
-            $isDuplicate = $twinId !== false && $twinId !== null;
+            $isDuplicate = $twinId !== null;
             $state = $isDuplicate ? 'duplicate_candidate' : 'sale_without_fill';
             $this->db->createCommand()->update('odoo_sales', ['match_state' => $state], ['id' => (int) $sale['id']])->execute();
             $this->raise(
@@ -196,16 +190,71 @@ final class FillMatcher
                 $sale['sale_created_at'],
                 $sale['volume'],
                 $sale['amount'],
-                $isDuplicate
-                    ? sprintf('%s: sale SAR %s may duplicate another sale of the same amount (no second fill observed)', (string) $sale['fuel_name'], $sale['amount'])
-                    : sprintf('%s: sale SAR %s at %s UTC has no matching controller fill', (string) $sale['fuel_name'], $sale['amount'], $sale['sale_created_at']),
-                ['odoo_sale_id' => (int) $sale['id'], 'uuid' => $sale['uuid'], 'twin_sale_id' => $isDuplicate ? (int) $twinId : null,
+                match (true) {
+                    $paidFill => sprintf('%s: sale SAR %s pays PTS transaction %s on pump %d, which another sale already paid', (string) $sale['fuel_name'], $sale['amount'], (string) $sale['pts_transaction_id'], (int) $sale['pump_number']),
+                    $isDuplicate => sprintf('%s: sale SAR %s may duplicate another sale of the same amount (no second fill observed)', (string) $sale['fuel_name'], $sale['amount']),
+                    default => sprintf('%s: sale SAR %s at %s UTC has no matching controller fill', (string) $sale['fuel_name'], $sale['amount'], $sale['sale_created_at']),
+                },
+                ['odoo_sale_id' => (int) $sale['id'], 'uuid' => $sale['uuid'], 'twin_sale_id' => $twinId,
                     'payment_method' => $sale['payment_method'], 'rrn' => $sale['rrn']],
                 "sale:{$sale['id']}",
-                $isDuplicate && $sale['rrn'] !== null ? 'high' : 'warning',
+                $isDuplicate && ($paidFill || $sale['rrn'] !== null) ? 'high' : 'warning',
             );
             $isDuplicate ? $result->duplicateCandidates++ : $result->salesWithoutFill++;
         }
+    }
+
+    /**
+     * The already-linked sale an unlinked sale probably duplicates. A late payment of a PENDING record gets a new
+     * `created_at` (70 min and 2 h seen on 2026-10-14), so a fixed time window misses real duplicates. In order:
+     *   A. the sale names a fill (pump + transaction) that another sale paid       → definite;
+     *   B. a linked sale on the same pump with the same amount in the same POS session (±12 h without a session);
+     *   C. a linked sale of the same grade and amount within 15 minutes (pump unknown, D19).
+     *
+     * @param array{id: string, pump_number: ?string, fuel_name: ?string, amount: string, sale_created_at: string, pts_transaction_id: ?string, odoo_pos_session_id: ?string, ...} $sale
+     *
+     * @return array{?int, bool} [twin sale id, whether the sale names a fill already paid]
+     */
+    private function twin(int $stationId, array $sale): array
+    {
+        $saleId = (int) $sale['id'];
+        $pump = (int) ($sale['pump_number'] ?? 0);
+
+        if ($sale['pts_transaction_id'] !== null && $pump > 0) {
+            $payer = (new Query($this->db))->select('ml.odoo_sale_id')->from(['f' => 'fill_events'])
+                ->innerJoin(['ml' => 'match_links'], 'ml.fill_event_id = f.id')
+                ->where(['f.station_id' => $stationId, 'f.pump_number' => $pump, 'f.pts_transaction_no' => $sale['pts_transaction_id']])
+                ->andWhere(['<>', 'ml.odoo_sale_id', $saleId])
+                ->scalar();
+            if ($payer !== false && $payer !== null) {
+                return [(int) $payer, true];
+            }
+        }
+
+        $createdAt = new DateTimeImmutable($sale['sale_created_at'] . ' UTC');
+        if ($pump > 0) {
+            $query = (new Query($this->db))->select('id')->from('odoo_sales')
+                ->where(['station_id' => $stationId, 'pump_number' => $pump, 'match_state' => 'linked', 'amount' => $sale['amount']])
+                ->andWhere(['not', ['id' => $saleId]]);
+            $query = $sale['odoo_pos_session_id'] !== null
+                ? $query->andWhere(['odoo_pos_session_id' => (int) $sale['odoo_pos_session_id']])
+                : $query->andWhere(['between', 'sale_created_at',
+                    $createdAt->modify('-12 hours')->format('Y-m-d H:i:s.v'), $createdAt->modify('+12 hours')->format('Y-m-d H:i:s.v')]);
+            $twin = $query->orderBy(['sale_created_at' => SORT_DESC])->scalar();
+            if ($twin !== false && $twin !== null) {
+                return [(int) $twin, false];
+            }
+        }
+
+        $twin = (new Query($this->db))->select('id')->from('odoo_sales')
+            ->where(['station_id' => $stationId, 'fuel_name' => $sale['fuel_name'], 'match_state' => 'linked', 'amount' => $sale['amount']])
+            ->andWhere(['between', 'sale_created_at',
+                $createdAt->modify('-' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v'),
+                $createdAt->modify('+' . self::DUPLICATE_WINDOW_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
+            ->andWhere(['not', ['id' => $saleId]])
+            ->scalar();
+
+        return [$twin === false || $twin === null ? null : (int) $twin, false];
     }
 
     private function link(int $stationId, int $fillId, int $saleId, string $method, string $confidence, MatchResult $result): void
