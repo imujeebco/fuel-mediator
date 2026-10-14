@@ -193,3 +193,37 @@ Open follow-ups:
 - Log the circuit breaker once per open/close, not twice a second.
 - Optional: short-circuit relay calls for a few seconds after an Odoo 503.
 - Deploy 18db510.
+
+### Afternoon of 2026-10-14 (continued observation)
+
+Station 11 has 3 confirmed duplicate payments, all in the D21 pattern: a PENDING record left behind after a disruption is settled again later.
+
+| Pump | Fill | First payment | Second payment |
+|---|---|---|---|
+| 15 | 57.312 L / SAR 124.94 | CARD 13:34 (Odoo 516980) | CASH 15:41 (516977) |
+| 18 | tx 12160, SAR 50 | manual CARD 17:04 (518015) | CASH 17:05 (517999) |
+| 9 | tx 4784, SAR 86 | manual CARD 17:23 (518131, RRN 123997508952) | CARD 18:05 (518169, RRN 122282880422): two card charges |
+
+- The production D21 filter cannot hide paid fills while the production collector cron is down.
+- The duplicate check missed pumps 15 and 9 because the late payment rewrites `created_at`, which puts it outside the 15-minute twin window.
+
+Disruptions:
+- **Odoo.sh 503 maintenance:** 15:01–15:12 and 16:23–16:33.
+  - Sale registrations queued and retried correctly. FuelPay's `OdooSyncWorker` retries every 5 min with no limit.
+  - `mobile_get_unpaid_fills` and `request_mobile_pump_permit` failed throughout, so attendants took payment outside the app. Five fills from the outage windows have no sale.
+- **Station 11 controller unreachable** (HTTP 530 / DNS), 17:01–17:03.
+- **All devices in manual mode** 17:03 → ~17:30.
+  - In FuelPay, manual mode is only the persisted Settings switch `pts_enabled`. Odoo's `mobile_offline_mode` and `pts_soft_connectivity_errors` are never read.
+  - So attendants switched PTS off and later back on, and the two pump 18 and pump 9 duplicates came out of that switch.
+- **Relay timeouts:** 14 `register_terminal_sale` calls hit the 13 s limit. The slowest successful call took 12.9 s.
+- **Odoo attachment error:** `mobile_list_employees` keeps failing on an attachment stored on external FTP (421 Too many connections).
+
+Observer gaps (local only, issues dismissed as `observation-reset` / `observation-gap`):
+- MySQL crash, 15:32–15:37.
+- PC internet drop, 17:30–17:44.
+- PC standby, ~18:00–22:14 (169 fills between polls).
+
+Open follow-ups, added to the list above:
+- Duplicate rule independent of `created_at`: pump + litres + amount within the shift, using the fill's tx.
+- An outage reconciliation list: fills dispensed while Odoo was down.
+- A relay timeout above Odoo's worst case.
