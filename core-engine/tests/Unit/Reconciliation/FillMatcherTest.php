@@ -26,7 +26,7 @@ final class FillMatcherTest extends Unit
     {
         $this->db = TestDatabase::connection();
         TestDatabase::truncate($this->db);
-        $controller = PtsFixture::seedController($this->db, 1, 2, [1, 2], [1 => 'A 91', 2 => 'A 95']);
+        $controller = PtsFixture::seedController($this->db, 1, 2, [1, 2, 3], [1 => 'A 91', 2 => 'A 95', 3 => 'A 91']);
         $this->stationId = $controller->stationId;
         $this->controllerId = $controller->id;
     }
@@ -104,6 +104,44 @@ final class FillMatcherTest extends Unit
 
         assertSame(1, $result->confirmed);
         assertSame('tx_id', $this->scalar("SELECT method FROM match_links WHERE fill_event_id = $fill"));
+    }
+
+    /**
+     * Live finding 2026-10-14 (Station 11): an earlier SAR 50 fill still waiting for its sale took a later SAR 50 sale of
+     * the same grade by fingerprint although that sale named another pump's transaction, and the shift cascaded down
+     * the chain. A sale carrying a PTS transaction number belongs to that fill only.
+     */
+    public function testSaleWithTransactionNumberIsNeverTakenByAnotherFill(): void
+    {
+        $waiting = $this->fill(3, 2550, '22.940', '50.00', '04:12:00');   // its sale never arrives
+        $own = $this->fill(1, 10507, '22.940', '50.00', '04:38:00');
+        $this->sale(1, '22.940', '50.00', '04:38:50', tx: '10507');
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 04:00:00', '2026-10-11 05:00:00');
+
+        assertSame(1, $result->confirmed);
+        assertSame('tx_id', $this->scalar("SELECT method FROM match_links WHERE fill_event_id = $own"));
+        assertSame('unmatched', $this->scalar("SELECT state FROM fill_events WHERE id = $waiting"), 'the fill really without a sale is reported');
+        assertSame(1, (int) $this->scalar("SELECT COUNT(*) FROM discrepancies WHERE type = 'unmatched_fill' AND pump_number = 3"));
+    }
+
+    /**
+     * Live finding 2026-10-14: a fill left PENDING was paid 70 min later and FuelPay rewrote `created_at` to the payment
+     * time. The transaction number still links it; it is not a duplicate of the next sale of the same amount.
+     */
+    public function testLatePaidSaleLinksByTransactionNumber(): void
+    {
+        $late = $this->fill(1, 12135, '9.170', '20.00', '03:06:00');
+        $this->fill(1, 12140, '9.170', '20.00', '04:02:00');
+        $this->sale(1, '9.170', '20.00', '04:02:30', tx: '12140');
+        $this->sale(1, '9.170', '20.00', '04:16:59', tx: '12135');
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 03:00:00', '2026-10-11 05:00:00');
+
+        assertSame(2, $result->confirmed);
+        assertSame('tx_id', $this->scalar("SELECT method FROM match_links WHERE fill_event_id = $late"));
+        assertSame(0, $result->duplicateCandidates);
+        assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM discrepancies'));
     }
 
     public function testRerunIsIdempotent(): void

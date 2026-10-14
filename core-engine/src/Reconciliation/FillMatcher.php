@@ -9,6 +9,7 @@ use App\Shared\Decimal;
 use App\Shared\Http\JsonResponder;
 use DateTimeImmutable;
 use Yiisoft\Db\Connection\ConnectionInterface;
+use Yiisoft\Db\Expression\Expression;
 use Yiisoft\Db\Query\Query;
 
 use function count;
@@ -22,7 +23,10 @@ use function sprintf;
  * Fills are processed in chronological order. Candidate sales: same station and fuel grade, APPROVED, not yet linked,
  * created in [fill end − 2 min, fill end + grace]. The grade is used instead of the pump because, with PTS off on the
  * devices, the pump number on a manual sale is effectively the fuel grade (live finding 2026-10-11). Rules, in order:
- *   1. same pump and sale.pts_transaction_id = fill transaction no. → confirmed (tx_id)
+ *   1. same pump and sale.pts_transaction_id = fill transaction no. → confirmed (tx_id); the sale may come up to
+ *      12 h after the fill (a fill left PENDING and paid later gets a new `created_at`, live finding 2026-10-14)
+ * Rules 2–4 skip sales whose pump + transaction number names a fill the collector saw: such a sale belongs to that
+ * fill only. A sale naming an unknown fill may still be fingerprinted (wrong pump/transaction recorded, D21).
  *   2. amount ±0.05 SAR and volume ±0.05 L, exactly one candidate    → confirmed (fingerprint)
  *   3. amount/volume fingerprint matches, several candidates         → probable, earliest sale (sequential)
  *   4. amount ±0.05 only, exactly one candidate                      → probable (fingerprint)
@@ -36,6 +40,7 @@ final class FillMatcher
     private const TOLERANCE_AMOUNT = '0.05';
     private const TOLERANCE_VOLUME = '0.050';
     private const LEAD_SECONDS = 120;
+    private const TX_LINK_SECONDS = 43200;
     private const DUPLICATE_WINDOW_SECONDS = 900;
 
     public function __construct(
@@ -75,15 +80,20 @@ final class FillMatcher
         $ended = new DateTimeImmutable($fill['ended_at'] . ' UTC');
         $windowEnd = $ended->modify("+{$graceSeconds} seconds");
 
-        $sameGroup = $fill['fuel_name'] !== null ? ['fuel_name' => $fill['fuel_name']] : ['pump_number' => (int) $fill['pump_number']];
+        $sameGroup = $fill['fuel_name'] !== null ? ['s.fuel_name' => $fill['fuel_name']] : ['s.pump_number' => (int) $fill['pump_number']];
+        // A sale naming a fill the collector saw belongs to that fill (rule 1). Fingerprinting it to an earlier fill of
+        // the same amount shifts every later sale by one down the chain (live finding 2026-10-14).
+        $namedFill = (new Query($this->db))->select(new Expression('1'))->from(['nf' => 'fill_events'])
+            ->where('nf.station_id = s.station_id AND nf.pump_number = s.pump_number AND nf.pts_transaction_no = s.pts_transaction_id');
         /** @var list<array{id: string, pump_number: ?string, pts_transaction_id: ?string, volume: string, amount: string, sale_created_at: string}> $candidates */
         $candidates = (new Query($this->db))
-            ->select(['id', 'pump_number', 'pts_transaction_id', 'volume', 'amount', 'sale_created_at'])
-            ->from('odoo_sales')
-            ->where(['station_id' => $stationId, 'payment_status' => 'APPROVED', 'match_state' => 'unlinked'] + $sameGroup)
-            ->andWhere(['>=', 'sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
-            ->andWhere(['<=', 'sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
-            ->orderBy(['sale_created_at' => SORT_ASC, 'id' => SORT_ASC])
+            ->select(['s.id', 's.pump_number', 's.pts_transaction_id', 's.volume', 's.amount', 's.sale_created_at'])
+            ->from(['s' => 'odoo_sales'])
+            ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED', 's.match_state' => 'unlinked'] + $sameGroup)
+            ->andWhere(['not exists', $namedFill])
+            ->andWhere(['>=', 's.sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
+            ->andWhere(['<=', 's.sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
+            ->orderBy(['s.sale_created_at' => SORT_ASC, 's.id' => SORT_ASC])
             ->all();
 
         // Rule 1: same pump and transaction number — independent of grade (PTS-mode sales may lack a fuel name).
@@ -97,7 +107,7 @@ final class FillMatcher
                     'pts_transaction_id' => $fill['pts_transaction_no'],
                 ])
                 ->andWhere(['>=', 'sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
-                ->andWhere(['<=', 'sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
+                ->andWhere(['<=', 'sale_created_at', $ended->modify('+' . self::TX_LINK_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
                 ->orderBy(['sale_created_at' => SORT_ASC])->scalar();
             if ($txSale !== false && $txSale !== null) {
                 $this->link($stationId, (int) $fill['id'], (int) $txSale, 'tx_id', 'confirmed', $result);
