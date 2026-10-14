@@ -75,6 +75,18 @@ final class StatusCollectorTest extends Unit
         assertSame(0, (int) $this->value('SELECT COUNT(*) FROM fill_events WHERE pts_transaction_no = 102'), 'zero-volume lift is not a sale');
     }
 
+    /** Production 2026-10-14: after a 46 h collector outage, the meter jump was booked as fills of the current shift. */
+    public function testGapAcrossACollectorOutageIsReportedAsCollectorGap(): void
+    {
+        $this->poll(PtsFixture::idle(1, 100, 1000.0, 10.0, 21.8), '06:50:00');
+        $this->poll(PtsFixture::idle(1, 180, 3500.0, 20.0, 43.6), '10:50:00');   // four hours unread
+
+        assertSame('0', (string) $this->value('SELECT preceding_missed_count FROM fill_events WHERE pts_transaction_no = 180'));
+        assertSame(null, $this->value('SELECT preceding_missed_volume FROM fill_events WHERE pts_transaction_no = 180'));
+        assertSame('2480.000', (string) $this->value("SELECT volume FROM discrepancies WHERE type = 'collector_gap'"));
+        assertSame('2026-10-11 03:50:00.000', (string) $this->value("SELECT period_start FROM discrepancies WHERE type = 'collector_gap'"));
+    }
+
     /** Several missed fills cannot be split: they stay counted on the next fill, as before. */
     public function testSeveralMissedFillsAreNotRebuilt(): void
     {

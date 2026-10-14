@@ -17,8 +17,10 @@ use DateTimeImmutable;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Query\Query;
 
+use function hash;
 use function is_string;
 use function json_encode;
+use function sprintf;
 
 /**
  * Observe-mode collector for one controller (decision D3, read-only).
@@ -37,6 +39,8 @@ use function json_encode;
 final class StatusCollector
 {
     public const SNAPSHOT_HEARTBEAT_SECONDS = 300;
+    /** A pump unread for longer than this had a collector outage, not a few fills between polls. */
+    public const OUTAGE_SECONDS = 300;
 
     public function __construct(
         private readonly ConnectionInterface $db,
@@ -97,9 +101,9 @@ final class StatusCollector
         CollectResult $result,
     ): void {
         $nowDb = $now->format('Y-m-d H:i:s.v');
-        /** @var array{last_transaction_no: ?string, last_total_volume: ?string, last_total_amount: ?string, last_snapshot_at: ?string}|null $cache */
+        /** @var array{last_transaction_no: ?string, last_total_volume: ?string, last_total_amount: ?string, last_snapshot_at: ?string, observed_at: ?string}|null $cache */
         $cache = (new Query($this->db))
-            ->select(['last_transaction_no', 'last_total_volume', 'last_total_amount', 'last_snapshot_at'])
+            ->select(['last_transaction_no', 'last_total_volume', 'last_total_amount', 'last_snapshot_at', 'observed_at'])
             ->from('pump_status_cache')
             ->where(['controller_id' => $controller->id, 'pump_number' => $status->pump])
             ->one();
@@ -119,7 +123,7 @@ final class StatusCollector
 
         if ($total !== null && $status->lastTransaction !== null) {
             if ($lastTx === null || $status->lastTransaction !== $lastTx) {
-                $this->recordFill($controller, $status, $lastTx, $lastTotal, $cache['last_total_amount'] ?? null, $raw, $nowDb, $result);
+                $this->recordFill($controller, $status, $lastTx, $lastTotal, $cache['last_total_amount'] ?? null, $cache['observed_at'] ?? null, $raw, $nowDb, $result);
             }
             $lastTx = $status->lastTransaction;
 
@@ -174,6 +178,7 @@ final class StatusCollector
         ?int $previousTx,
         ?string $previousTotal,
         ?string $previousTotalAmount,
+        ?string $previousObservedAt,
         ?array $raw,
         string $nowDb,
         CollectResult $result,
@@ -213,6 +218,16 @@ final class StatusCollector
         }
         $result->missedFills += $missedCount;
 
+        // After a collector outage the gap is not "a few fills between polls" of the window this fill ends in: report
+        // it as a collector gap over the outage instead, so volume reports do not book hours of dispensing into the
+        // current shift (production 2026-10-14: a 46 h outage showed +32,425 L pumped − sold at Station 11).
+        if (($missedCount > 0 || $missedVolume !== null) && $previousObservedAt !== null
+            && (new DateTimeImmutable($nowDb . ' UTC'))->getTimestamp() - (new DateTimeImmutable($previousObservedAt . ' UTC'))->getTimestamp() > self::OUTAGE_SECONDS) {
+            $this->raiseCollectorGap($controller, $status->pump, $previousObservedAt, $nowDb, $missedCount, $missedVolume);
+            $missedCount = 0;
+            $missedVolume = null;
+        }
+
         // Zero-volume transactions (nozzle lifted, nothing dispensed) are not sales.
         if (Decimal::compare($volume, '0') <= 0) {
             return;
@@ -225,6 +240,27 @@ final class StatusCollector
         if ($inserted) {
             $result->fills++;
         }
+    }
+
+    private function raiseCollectorGap(ControllerEndpoint $controller, int $pump, string $fromUtc, string $toUtc, int $fills, ?string $volume): void
+    {
+        $columns = [
+            'station_id' => $controller->stationId,
+            'type' => 'collector_gap',
+            'severity' => 'warning',
+            'status' => 'open',
+            'fingerprint' => hash('sha256', "{$controller->stationId}|collector_gap|{$controller->id}|$pump|$fromUtc"),
+            'period_start' => $fromUtc,
+            'period_end' => $toUtc,
+            'pump_number' => $pump,
+            'volume' => $volume,
+            'summary' => sprintf('Pump %d: no reading from %s to %s UTC; %d fill(s) / %s L dispensed meanwhile are not attributed to a window',
+                $pump, $fromUtc, $toUtc, $fills, $volume ?? '0.000'),
+            'details' => json_encode(['controller_id' => $controller->id, 'missed_fills' => $fills, 'missed_volume' => $volume], JsonResponder::FLAGS),
+        ];
+        $update = $columns;
+        unset($update['status'], $update['fingerprint']);
+        $this->db->createCommand()->upsert('discrepancies', $columns, $update)->execute();
     }
 
     /**

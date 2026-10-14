@@ -30,8 +30,8 @@ use function sprintf;
  *    the fuel grade (live finding 2026-10-11), so per-pump comparison is meaningless there.
  *  - BY_PUMP: per physical pump; only meaningful where devices record the real pump (PTS on).
  *
- * Coverage is "complete" only when the collector observed every pump in the group before the window started; partial
- * groups never raise discrepancies (a window is never reported clean without evidence). Detect and report only (D2).
+ * Coverage is "complete" only when the collector observed every pump in the group before the window started and no
+ * collector outage (`collector_gap`) overlaps the window; partial groups never raise discrepancies (a window is never reported clean without evidence). Detect and report only (D2).
  */
 final class VolumeReconciler
 {
@@ -105,7 +105,10 @@ final class VolumeReconciler
                 $missedVolume = Decimal::add($missedVolume, self::dec($row['missed_volume'] ?? null));
                 $covered = $covered && (new Query($this->db))->from('meter_snapshots')
                     ->where(['controller_id' => $controllerId, 'pump_number' => $number])
-                    ->andWhere(['<=', 'observed_at', $fromUtc])->exists();
+                    ->andWhere(['<=', 'observed_at', $fromUtc])->exists()
+                    && !(new Query($this->db))->from('discrepancies')
+                        ->where(['station_id' => $stationId, 'type' => 'collector_gap', 'pump_number' => $number])
+                        ->andWhere(['<', 'period_start', $toUtc])->andWhere(['>', 'period_end', $fromUtc])->exists();
             }
 
             // Sales linked to a fill count in the fill's window (late registration is not penalised); unlinked sales

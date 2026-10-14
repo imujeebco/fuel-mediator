@@ -74,6 +74,24 @@ final class VolumeReconcilerTest extends Unit
         assertSame(0, (int) $this->db->createCommand('SELECT COUNT(*) FROM discrepancies')->queryScalar());
     }
 
+    /** A collector outage inside the window means the controller's side is incomplete: never flagged. */
+    public function testWindowOverlappingACollectorGapIsPartial(): void
+    {
+        $this->snapshot(1, '1000.000', '2026-10-11 03:55:00');
+        $this->fill(1, 101, '20.000', '1020.000', '2026-10-11 04:10:00');
+        $this->db->createCommand()->insert('discrepancies', [
+            'station_id' => $this->stationId, 'type' => 'collector_gap', 'severity' => 'warning', 'fingerprint' => 'gap-1',
+            'period_start' => '2026-10-11 04:20:00', 'period_end' => '2026-10-11 06:30:00', 'pump_number' => 1,
+            'volume' => '900.000', 'summary' => 'gap',
+        ])->execute();
+
+        $report = (new VolumeReconciler($this->db, new Clock()))
+            ->reconcile($this->stationId, '2026-10-11 04:00:00.000', '2026-10-11 05:00:00.000');
+
+        assertSame('partial', $report->lines[0]->coverage);
+        assertSame(false, $report->lines[0]->flagged);
+    }
+
     public function testUnplacedSalesAreCountedPerGroupingMode(): void
     {
         $this->snapshot(1, '1000.000', '2026-10-11 03:55:00');
