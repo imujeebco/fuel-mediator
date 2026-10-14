@@ -99,6 +99,25 @@ final class OdooRelayTest extends Unit
         assertNull($this->scalar("SELECT station_id FROM sale_observations WHERE uuid = 'u-5'"));
     }
 
+    /** Live finding 2026-10-14: FuelPay omits station_id when the device has no Odoo station set. */
+    public function testDeviceWithoutStationIdIsLinkedThroughItsPosConfig(): void
+    {
+        $stationId = $this->scalar('SELECT id FROM stations');
+        $this->db->createCommand()->insert('odoo_sales', [
+            'station_id' => $stationId, 'odoo_id' => 900, 'uuid' => 'mirrored', 'odoo_pos_config_id' => 58, 'pump_number' => 1,
+            'volume' => '1.000', 'amount' => '2.18', 'payment_status' => 'APPROVED', 'sale_created_at' => '2026-10-14 10:00:00',
+            'odoo_write_date' => '2026-10-14 10:00:00',
+        ])->execute();
+        $this->transport->queueJson(['jsonrpc' => '2.0', 'id' => 3, 'result' => ['status' => 'created', 'canonical_uuid' => 'x']]);
+        $payload = $this->salePayload('u-6');
+        unset($payload['station_id']);
+
+        $this->relay()->handle($this->rpc(3, 'pts.backend.config', 'register_terminal_sale', [$payload]), '10.0.0.5', 'c');
+
+        assertSame($stationId, $this->scalar('SELECT station_id FROM devices'));
+        assertSame($stationId, $this->scalar("SELECT station_id FROM sale_observations WHERE uuid = 'u-6'"));
+    }
+
     /** Test scenario 9: Odoo unavailable during a completed sale — the mediator never acknowledges it itself. */
     public function testOdooTimeoutReturnsRetryableErrorAndKeepsTheAttempt(): void
     {
@@ -170,7 +189,7 @@ final class OdooRelayTest extends Unit
             $this->transport,
             $this->db,
             new Redactor(),
-            new SaleObserver($this->db, $clock, new NullLogger()),
+            new SaleObserver($this->db, $clock, new NullLogger(), new SettledFills($this->db, $clock)),
             new PumpsRewriter($this->db, $publicUrl),
             new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), true),
             new PriceVersionFilter($this->db, new SettledFills($this->db, $clock), new NullLogger()),

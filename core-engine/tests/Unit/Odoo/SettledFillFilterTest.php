@@ -162,7 +162,7 @@ final class SettledFillFilterTest extends Unit
             $this->transport,
             $this->db,
             new Redactor(),
-            new SaleObserver($this->db, $clock, new NullLogger()),
+            new SaleObserver($this->db, $clock, new NullLogger(), new SettledFills($this->db, $clock)),
             new PumpsRewriter($this->db, ''),
             new SettledFillFilter(new SettledFills($this->db, $clock), $clock, new NullLogger(), $enabled),
             new PriceVersionFilter($this->db, new SettledFills($this->db, $clock), new NullLogger()),

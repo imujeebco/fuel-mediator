@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Odoo\Relay;
 
+use App\Reconciliation\SettledFills;
 use App\Shared\Arr;
 use App\Shared\Clock;
 use App\Shared\Decimal;
@@ -27,6 +28,7 @@ final class SaleObserver
         private readonly ConnectionInterface $db,
         private readonly Clock $clock,
         private readonly LoggerInterface $logger,
+        private readonly SettledFills $stations,
     ) {}
 
     /**
@@ -53,7 +55,11 @@ final class SaleObserver
                     continue;
                 }
                 $backendId = Arr::int($payload, 'station_id') ?? Arr::int($payload, 'pts_station_id');
-                $stationId = $this->stationForBackend($backendId);
+                // The POS config's company decides the station (D18); FuelPay omits station_id when the device has no
+                // Odoo station set, which left those devices "not linked" (live finding 2026-10-14).
+                $posConfig = Arr::int($payload, 'pos_config_id');
+                $stationId = ($posConfig === null ? null : $this->stations->stationForPosConfig($posConfig))
+                    ?? $this->stationForBackend($backendId);
                 $volume = Arr::raw($payload, 'volume');
                 $amount = Arr::raw($payload, 'amount_sar');
                 $manual = Arr::bool($payload, 'manual_sale');
