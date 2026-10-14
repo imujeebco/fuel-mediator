@@ -79,6 +79,7 @@ final class SystemStatus
         $public = (string) Environment::get('MEDIATOR_PUBLIC_URL');
         $add('Configuration', 'MEDIATOR_PUBLIC_URL', null, $public === '' ? 'empty: devices keep talking to controllers directly (switch-over not active)' : $public);
         $add('Configuration', 'SETTLED_FILL_FILTER (D21)', null, (string) Environment::get('SETTLED_FILL_FILTER') === '0' ? 'off' : 'on');
+        $add('Configuration', 'SETTLED_FILL_LIVE (D28)', null, (string) Environment::get('SETTLED_FILL_LIVE') === '0' ? 'off' : 'on');
 
         try {
             $version = (string) $this->db->createCommand('SELECT VERSION()')->queryScalar();

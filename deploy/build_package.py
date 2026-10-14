@@ -48,6 +48,8 @@ MEDIATOR_PUBLIC_URL=
 
 # D21: report fills already paid by another sale as paid ("0" = off)
 SETTLED_FILL_FILTER=1
+# D28: a PTS fill paid by a manual sale on the same pump is reported as paid ("0" = off)
+SETTLED_FILL_LIVE=1
 
 # D23: encrypts controller passwords read from Odoo (generated for this package; keep it private)
 MEDIATOR_SECRET_KEY={key}

@@ -8,10 +8,12 @@ use App\Odoo\OdooReadClientInterface;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PumpsRewriter;
 use App\Odoo\Relay\SettledFillFilter;
+use App\Reconciliation\LiveSettlements;
 use App\Shared\Crypto\SecretBox;
 use App\Web\Admin\Auth\AdminAuth;
 use App\Shared\Http\CurlHttpTransport;
 use App\Shared\Http\HttpTransportInterface;
+use Yiisoft\Definitions\Reference;
 
 return [
     HttpTransportInterface::class => CurlHttpTransport::class,
@@ -25,8 +27,12 @@ return [
     ],
 
     // D21: on unless SETTLED_FILL_FILTER=0 (kill switch: devices then see Odoo's unpaid list unchanged).
+    // D28 (live settlement by a manual sale on the same pump): on unless SETTLED_FILL_LIVE=0.
     SettledFillFilter::class => [
-        '__construct()' => ['enabled' => (string) Environment::get('SETTLED_FILL_FILTER') !== '0'],
+        '__construct()' => [
+            'enabled' => (string) Environment::get('SETTLED_FILL_FILTER') !== '0',
+            'live' => (string) Environment::get('SETTLED_FILL_LIVE') !== '0' ? Reference::to(LiveSettlements::class) : null,
+        ],
     ],
 
     // D23: encryption of controller passwords read from Odoo.

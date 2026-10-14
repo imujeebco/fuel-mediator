@@ -52,6 +52,9 @@ final class Environment
         // Decision D21: report fills already paid by another sale as paid to devices. "0" switches it off.
         self::setString('SETTLED_FILL_FILTER', '1');
 
+        // Decision D28: a PTS fill paid by a manual sale on the same pump is reported as paid at once. "0" switches it off.
+        self::setString('SETTLED_FILL_LIVE', '1');
+
         // Decision D23: key (32 bytes, base64) for controller passwords read from Odoo and stored encrypted.
         // Generate with `yii secret:generate-key`. Empty = passwords are not stored (env PTS_PASSWORD_<id> only).
         self::setString('MEDIATOR_SECRET_KEY', '');
