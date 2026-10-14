@@ -21,7 +21,7 @@ use function sprintf;
  * Fill-level reconciliation (docs/transaction-lifecycle.md §6.2): links controller fills to Odoo sales.
  *
  * Fills are processed in chronological order. Candidate sales: same station and fuel grade, APPROVED, not yet linked,
- * created in [fill end − 2 min, fill end + grace]. The grade is used instead of the pump because, with PTS off on the
+ * created in [fill start − 2 min, fill end + grace] (start, so prepaid sales count). The grade is used instead of the pump because, with PTS off on the
  * devices, the pump number on a manual sale is effectively the fuel grade (live finding 2026-10-11). Rules, in order:
  *   1. same pump and sale.pts_transaction_id = fill transaction no. → confirmed (tx_id); the sale may come up to
  *      12 h after the fill (a fill left PENDING and paid later gets a new `created_at`, live finding 2026-10-14)
@@ -54,9 +54,9 @@ final class FillMatcher
         $now = $this->clock->now();
         $graceSeconds = $graceMinutes * 60;
 
-        /** @var list<array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string}> $fills */
+        /** @var list<array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, started_at: ?string, ended_at: string, volume: string, amount: string}> $fills */
         $fills = (new Query($this->db))
-            ->select(['id', 'pump_number', 'nozzle_number', 'fuel_name', 'pts_transaction_no', 'ended_at', 'volume', 'amount'])
+            ->select(['id', 'pump_number', 'nozzle_number', 'fuel_name', 'pts_transaction_no', 'started_at', 'ended_at', 'volume', 'amount'])
             ->from('fill_events')
             ->where(['station_id' => $stationId, 'state' => ['observed', 'unmatched', 'ambiguous']])
             ->andWhere(['>=', 'ended_at', $fromUtc])->andWhere(['<', 'ended_at', $toUtc])
@@ -73,11 +73,15 @@ final class FillMatcher
     }
 
     /**
-     * @param array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, ended_at: string, volume: string, amount: string} $fill
+     * @param array{id: string, pump_number: string, nozzle_number: string, fuel_name: ?string, pts_transaction_no: ?string, started_at: ?string, ended_at: string, volume: string, amount: string} $fill
      */
     private function matchFill(int $stationId, array $fill, DateTimeImmutable $now, int $graceSeconds, MatchResult $result): void
     {
         $ended = new DateTimeImmutable($fill['ended_at'] . ' UTC');
+        // Prepaid sales (charged before the nozzle is lifted, common when the controller is slow) precede the fill
+        // start, so the lead window is measured from the start (live finding 2026-10-15: card sale 3 min before end).
+        $earliest = (new DateTimeImmutable(($fill['started_at'] ?? $fill['ended_at']) . ' UTC'))
+            ->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v');
         $windowEnd = $ended->modify("+{$graceSeconds} seconds");
 
         $sameGroup = $fill['fuel_name'] !== null ? ['s.fuel_name' => $fill['fuel_name']] : ['s.pump_number' => (int) $fill['pump_number']];
@@ -91,7 +95,7 @@ final class FillMatcher
             ->from(['s' => 'odoo_sales'])
             ->where(['s.station_id' => $stationId, 's.payment_status' => 'APPROVED', 's.match_state' => 'unlinked'] + $sameGroup)
             ->andWhere(['not exists', $namedFill])
-            ->andWhere(['>=', 's.sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
+            ->andWhere(['>=', 's.sale_created_at', $earliest])
             ->andWhere(['<=', 's.sale_created_at', $windowEnd->format('Y-m-d H:i:s.v')])
             ->orderBy(['s.sale_created_at' => SORT_ASC, 's.id' => SORT_ASC])
             ->all();
@@ -106,7 +110,7 @@ final class FillMatcher
                     'pump_number' => (int) $fill['pump_number'],
                     'pts_transaction_id' => $fill['pts_transaction_no'],
                 ])
-                ->andWhere(['>=', 'sale_created_at', $ended->modify('-' . self::LEAD_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
+                ->andWhere(['>=', 'sale_created_at', $earliest])
                 ->andWhere(['<=', 'sale_created_at', $ended->modify('+' . self::TX_LINK_SECONDS . ' seconds')->format('Y-m-d H:i:s.v')])
                 ->orderBy(['sale_created_at' => SORT_ASC])->scalar();
             if ($txSale !== false && $txSale !== null) {

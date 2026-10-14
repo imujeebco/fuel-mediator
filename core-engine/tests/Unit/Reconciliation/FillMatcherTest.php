@@ -144,6 +144,19 @@ final class FillMatcherTest extends Unit
         assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM discrepancies'));
     }
 
+    /** Live finding 2026-10-15: card charged manually at 00:05:39, nozzle lifted 00:07:35, fill ended 00:08:52. */
+    public function testPrepaidSaleBeforeFillStartIsLinked(): void
+    {
+        $fill = $this->fill(1, 5009, '13.760', '30.00', '04:08:52', startedUtc: '04:07:35');
+        $this->sale(1, '13.761', '30.00', '04:05:39');
+
+        $result = $this->matcher('06:00:00')->match($this->stationId, '2026-10-11 04:00:00', '2026-10-11 05:00:00');
+
+        assertSame(1, $result->confirmed);
+        assertSame('fingerprint', $this->scalar("SELECT method FROM match_links WHERE fill_event_id = $fill"));
+        assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM discrepancies'));
+    }
+
     public function testRerunIsIdempotent(): void
     {
         $this->fill(1, 101, '20.000', '43.60', '04:10:00');
@@ -161,14 +174,14 @@ final class FillMatcherTest extends Unit
         return new FillMatcher($this->db, Clock::fixedAt(new DateTimeImmutable("2026-10-11 $utcTime", new DateTimeZone('UTC'))));
     }
 
-    private function fill(int $pump, int $tx, string $volume, string $amount, string $endedUtc): int
+    private function fill(int $pump, int $tx, string $volume, string $amount, string $endedUtc, ?string $startedUtc = null): int
     {
         static $meter = 10000;
         $meter += 100;
         $this->db->createCommand()->insert('fill_events', [
             'station_id' => $this->stationId, 'controller_id' => $this->controllerId, 'pump_number' => $pump,
             'nozzle_number' => 1, 'fuel_name' => $pump === 2 ? 'A 95' : 'A 91', 'pts_transaction_no' => $tx,
-            'ended_at' => "2026-10-11 $endedUtc", 'volume' => $volume,
+            'started_at' => $startedUtc === null ? null : "2026-10-11 $startedUtc", 'ended_at' => "2026-10-11 $endedUtc", 'volume' => $volume,
             'amount' => $amount, 'meter_volume_after' => $meter, 'source' => 'status_transition',
         ])->execute();
 
