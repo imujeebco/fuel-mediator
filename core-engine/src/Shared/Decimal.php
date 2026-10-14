@@ -8,6 +8,7 @@ use InvalidArgumentException;
 
 use function bcadd;
 use function bccomp;
+use function bcdiv;
 use function bcmul;
 use function bcsub;
 use function is_numeric;
@@ -48,6 +49,20 @@ final class Decimal
     public static function mul(string $a, string $b, int $scale = 3): string
     {
         return bcmul(self::of($a, $scale), self::of($b, 6), $scale);
+    }
+
+    /**
+     * Division by zero yields null (a rate cannot be derived).
+     *
+     * @return numeric-string|null
+     */
+    public static function div(string $a, string $b, int $scale = 3): ?string
+    {
+        if (self::compare($b, '0', 6) === 0) {
+            return null;
+        }
+
+        return bcdiv(self::of($a, 6), self::of($b, 6), $scale);
     }
 
     /** @return numeric-string */

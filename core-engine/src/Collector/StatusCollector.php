@@ -119,7 +119,7 @@ final class StatusCollector
 
         if ($total !== null && $status->lastTransaction !== null) {
             if ($lastTx === null || $status->lastTransaction !== $lastTx) {
-                $this->recordFill($controller, $status, $lastTx, $lastTotal, $raw, $nowDb, $result);
+                $this->recordFill($controller, $status, $lastTx, $lastTotal, $cache['last_total_amount'] ?? null, $raw, $nowDb, $result);
             }
             $lastTx = $status->lastTransaction;
 
@@ -173,6 +173,7 @@ final class StatusCollector
         PumpStatus $status,
         ?int $previousTx,
         ?string $previousTotal,
+        ?string $previousTotalAmount,
         ?array $raw,
         string $nowDb,
         CollectResult $result,
@@ -192,45 +193,90 @@ final class StatusCollector
                 $missedVolume = $unexplained;
             }
         }
-        if ($missedCount > 0 || $missedVolume !== null) {
-            $result->missedFills += $missedCount;
+
+        // Exactly one fill missed between polls is fully determined by the totals: rebuild it, so a sale naming its
+        // transaction number still links. Otherwise the gap is lost whenever the visible transaction is a
+        // zero-volume lift (live finding 2026-10-14: pump 9 tx 4811, 21.30 L, then tx 4812 with 0 L).
+        $missedAmount = $missedCount === 1 && $missedVolume !== null && $previousTotalAmount !== null && $status->lastTotalAmount !== null
+            ? Decimal::sub(Decimal::sub($status->lastTotalAmount, $status->lastAmount ?? '0.00', 2), $previousTotalAmount, 2)
+            : null;
+        if ($missedAmount !== null && $missedVolume !== null && $previousTx !== null && Decimal::compare($missedAmount, '0', 2) > 0) {
+            $ended = $controller->controllerTimeToUtc($status->lastStartedAtLocal) ?? $nowDb;
+            $rebuilt = $this->insertFill($controller, $status->pump, $status->lastNozzle ?? 1, $previousTx + 1, null, $ended,
+                $missedVolume, $missedAmount, Decimal::div($missedAmount, $missedVolume, 3), Decimal::add($previousTotal ?? '0', $missedVolume),
+                Decimal::add($previousTotalAmount ?? '0', $missedAmount, 2), 'meter_gap', 0, null, null, $nowDb);
+            if ($rebuilt) {
+                $result->fills++;
+                $missedCount = 0;
+                $missedVolume = null;
+            }
         }
+        $result->missedFills += $missedCount;
 
         // Zero-volume transactions (nozzle lifted, nothing dispensed) are not sales.
         if (Decimal::compare($volume, '0') <= 0) {
             return;
         }
 
-        $inserted = $this->db->createCommand(
+        $inserted = $this->insertFill($controller, $status->pump, $status->lastNozzle ?? 1, (int) $status->lastTransaction,
+            $controller->controllerTimeToUtc($status->lastStartedAtLocal), $controller->controllerTimeToUtc($status->lastEndedAtLocal) ?? $nowDb,
+            $volume, $status->lastAmount ?? '0.00', $status->lastPrice, $total, $status->lastTotalAmount, 'status_transition',
+            $missedCount, $missedVolume, $raw, $nowDb);
+        if ($inserted) {
+            $result->fills++;
+        }
+    }
+
+    /**
+     * @param array<string, mixed>|null $raw
+     *
+     * @return bool Whether a row was written (the meter reading is unique per pump and nozzle, so replays are ignored).
+     */
+    private function insertFill(
+        ControllerEndpoint $controller,
+        int $pump,
+        int $nozzle,
+        int $transactionNo,
+        ?string $startedUtc,
+        string $endedUtc,
+        string $volume,
+        string $amount,
+        ?string $price,
+        string $meterAfter,
+        ?string $meterAmountAfter,
+        string $source,
+        int $missedCount,
+        ?string $missedVolume,
+        ?array $raw,
+        string $nowDb,
+    ): bool {
+        return $this->db->createCommand(
             'INSERT IGNORE INTO fill_events (station_id, controller_id, pump_number, nozzle_number, fuel_name, pts_transaction_no,'
             . ' started_at, ended_at, volume, amount, price, meter_volume_after, meter_amount_after, source,'
             . ' preceding_missed_count, preceding_missed_volume, raw, created_at, updated_at)'
             . ' VALUES (:station, :controller, :pump, :nozzle, :fuel, :tx, :started, :ended, :volume, :amount, :price,'
-            . ' :meter, :meter_amount, \'status_transition\', :missed, :missed_volume, :raw, :now, :now)',
+            . ' :meter, :meter_amount, :source, :missed, :missed_volume, :raw, :now, :now)',
             [
                 ':station' => $controller->stationId,
                 ':controller' => $controller->id,
-                ':pump' => $status->pump,
-                ':nozzle' => $status->lastNozzle ?? 1,
-                ':fuel' => $this->fuelName($controller->id, $status->pump, $status->lastNozzle ?? 1),
-                ':tx' => $status->lastTransaction,
-                ':started' => $controller->controllerTimeToUtc($status->lastStartedAtLocal),
-                ':ended' => $controller->controllerTimeToUtc($status->lastEndedAtLocal) ?? $nowDb,
+                ':pump' => $pump,
+                ':nozzle' => $nozzle,
+                ':fuel' => $this->fuelName($controller->id, $pump, $nozzle),
+                ':tx' => $transactionNo,
+                ':started' => $startedUtc,
+                ':ended' => $endedUtc,
                 ':volume' => $volume,
-                ':amount' => $status->lastAmount ?? '0.00',
-                ':price' => $status->lastPrice,
-                ':meter' => $total,
-                ':meter_amount' => $status->lastTotalAmount,
+                ':amount' => $amount,
+                ':price' => $price,
+                ':meter' => $meterAfter,
+                ':meter_amount' => $meterAmountAfter,
+                ':source' => $source,
                 ':missed' => $missedCount,
                 ':missed_volume' => $missedVolume,
                 ':raw' => json_encode($raw, JsonResponder::FLAGS),
                 ':now' => $nowDb,
             ],
-        )->execute();
-
-        if ($inserted > 0) {
-            $result->fills++;
-        }
+        )->execute() > 0;
     }
 
     /** Fuel grade of the nozzle per the controller's own configuration (see ConfigSync). */

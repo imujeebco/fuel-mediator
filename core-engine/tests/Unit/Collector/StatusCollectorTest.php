@@ -57,6 +57,33 @@ final class StatusCollectorTest extends Unit
         assertSame('30.000', (string) $this->value('SELECT preceding_missed_volume FROM fill_events WHERE pts_transaction_no = 103'));
     }
 
+    /**
+     * Live finding 2026-10-14 (pump 9): tx 4811 dispensed 21.30 L, then tx 4812 was a zero-volume lift; the poll only
+     * saw 4812, so the missed fill was dropped with it. A single missed fill is now rebuilt from the totals.
+     */
+    public function testSingleMissedFillBehindAZeroVolumeLiftIsRebuiltFromTheTotals(): void
+    {
+        $this->poll(PtsFixture::idle(1, 100, 1000.0, 10.0, 21.8), '06:50:00');
+        $result = $this->poll(PtsFixture::idle(1, 102, 1021.3, 0.0, 0.0), '06:55:00');
+
+        assertSame(1, $result->fills);
+        assertSame(0, $result->missedFills);
+        assertSame('meter_gap', $this->value('SELECT source FROM fill_events WHERE pts_transaction_no = 101'));
+        assertSame('21.300', (string) $this->value('SELECT volume FROM fill_events WHERE pts_transaction_no = 101'));
+        assertSame('46.43', (string) $this->value('SELECT amount FROM fill_events WHERE pts_transaction_no = 101'));
+        assertSame('1021.300', (string) $this->value('SELECT meter_volume_after FROM fill_events WHERE pts_transaction_no = 101'));
+        assertSame(0, (int) $this->value('SELECT COUNT(*) FROM fill_events WHERE pts_transaction_no = 102'), 'zero-volume lift is not a sale');
+    }
+
+    /** Several missed fills cannot be split: they stay counted on the next fill, as before. */
+    public function testSeveralMissedFillsAreNotRebuilt(): void
+    {
+        $this->poll(PtsFixture::idle(1, 100, 1000.0, 10.0, 21.8), '06:50:00');
+        $this->poll(PtsFixture::idle(1, 103, 1050.0, 20.0, 43.6), '06:55:00');
+
+        assertSame(0, (int) $this->value("SELECT COUNT(*) FROM fill_events WHERE source = 'meter_gap'"));
+    }
+
     public function testStatusWithoutMeterIsDeferredUntilMeterIsReported(): void
     {
         $this->poll(PtsFixture::idle(1, 100, 1000.0, 10.0, 21.8), '06:50:00');
