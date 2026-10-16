@@ -313,3 +313,27 @@ Production (read-only look, 08:00 local):
   - register_terminal_sale averaged 1.9 s, with a maximum of 12.8 s and 34 timeouts.
   - mobile_close_shift averaged 24–47 s, with 5 timeouts at 55 s.
 - **Odoo errors:** `_pts_reclaim_stale_pos_sync_claims` is missing (mobile_retry_failed_pos_syncs), and there is an FTP "421 Too many connections" error.
+
+## Session 43348 close, Station 11 (2026-10-16 12:11:51 → 2026-10-17 00:02:22 local)
+
+Source: controller history (`shift_43348_pts.json`, 443 fills with volume) against the mirrored Odoo sales; report in `fuel-scratpad/shift_43348_story.txt`.
+
+**Totals:** pumped 14,505.7 L, SAR 32,542.03. Paid: 419 approved sales, SAR 32,454.98 (card 27,580.98, cash 4,649.21, other 224.79). Shortfall +SAR 87.05 (0.27%). No PENDING or CANCELLED rows were left at close, and all sales are `synced`.
+- **Gap before the session:** 43306 closed at 11:44:30, so no session was open for 27 min. No fills happened in that gap.
+
+**PTS mode lost at 16:00.** The controller (Cloudflare `station11.fuel.net.sa`) timed out from 16:00:22 to 16:02:16 local.
+- Devices fell back to manual within minutes: seraj at 16:02, rana 16:05, aqib 16:29, esaa 16:45.
+- They never returned to PTS: only 1 of the 301 sales after 16:02 carries a PTS tx (esaa, 23:59).
+- **Before the drop (12:11–16:02):** 118 sales, 97% with tx. Pumped SAR 8,811.62, paid SAR 8,974.50.
+- **After the drop:** 323 fills, SAR 23,730.41, against 301 sales, SAR 23,480.48. Matching is by amount only, so fill-level results after 16:02 (52 "unpaid" fills, 22 "sales without fill") are mostly wrong-amount or wrong-pump manual entries, not lost money.
+
+Double records:
+
+| Certainty | Pump | Amount | Records |
+|---|---|---|---|
+| Certain | 10 | SAR 109 | 2 × CASH 27 s apart (rana, app flow, 14:27, #529097 / #529105) |
+| Certain | 6 | SAR 11 | 2 × CASH 3 min apart (rana, 12:28 with tx / 12:31 without) |
+| Probable | 9 | SAR 50 | 2 cards, RRN …774932 / …780050 (16:29, 16:59) |
+| Probable | 9 | SAR 100 | 2 cards, RRN …780094 / …780160 (17:20, 17:56) |
+| Probable | 14 | SAR 100 | card 15:40 + OTHER 16:02 |
+| Probable | 18 | SAR 100 | card 21:00 + cash 21:06 |
