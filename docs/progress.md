@@ -276,3 +276,40 @@ Duplicate payments seen at Station 11 since 2026-10-14 13:24, SAR 379.62 in tota
 | 17 | SAR 30 | card + cash |
 
 Observer note: this laptop's battery is at 5% and the PC sleeps (18:00–22:14 and 01:07–01:18). Local fill coverage has gaps there.
+
+## Shift observation, Station 11 session 43306 (2026-10-16, from 00:04 local)
+
+The local observer was restarted at 07:54 local (collector and a sync loop: `fuel-scratpad/observe_loop.sh`). The collector had been off since 15 Oct 19:30 local, so this shift's fills were read from the controller's own history (`ReportGetPumpTransactions`, read-only): `fuel-scratpad/pts_shift_tx.php` → `shift_43306_pts.json`, report `shift_story.py` → `shift_43306_story.txt`. The totalizer chain is complete (158 records, no gaps).
+
+Up to 07:53 local, from 114 fills:
+
+| Grade | Pumped L | Pumped SAR | Paid SAR (approved) |
+|---|---|---|---|
+| A 91 | 1395.24 | 3041.61 | 2849.74 |
+| A 95 | 1383.26 | 3222.95 | 3295.95 |
+| Diesel | 958.11 | 1715.03 | 1715.03 |
+| Total | 3736.61 | 7979.59 | 7860.72 (+118.87 unpaid) |
+
+- **Payments:** 114 approved, worth SAR 5,055 by card and SAR 2,806 cash. 109 were entered as manual and 5 through the app; 106 link to their fill by transaction number.
+- **Fills with no approved sale:** 10, worth SAR 300.13.
+  - 3 are PENDING right now, worth SAR 86.87.
+  - 3 were paid under the wrong pump, worth SAR 58.26: pump 4 → 2, 17 → 2 and 18 → 1.
+  - 4 have no payment at all, worth SAR 155: pump 6 SAR 30 at 00:37, and on pump 18 SAR 50 at 01:55, SAR 30 at 02:59 and SAR 45 at 03:42. The cancelled pump 18 records sit next to an old PENDING record settled by the same operator about 20 s earlier, so money is being booked against old PENDING records.
+- **Stale paid fills shown as unpaid again:**
+  - Pump 2 tx 2180 and pump 10 tx 3473 were paid manually at 23:37 and 23:39 (no tx), then re-used by app sales: SAR 20 at 00:06 (really pump 4 tx 931) and SAR 15 at 02:00.
+  - Pump 10 at 02:00 and pump 7 at 02:01 carry two SAR 15 card charges 35 s apart (RRN 127170585909 / …920) with no SAR 15 fill near them. This is a possible double charge.
+- **POS sync:** 2 records `failed`.
+
+Production (read-only look, 08:00 local):
+- **Hosting:** the mediator runs in Buffalo, US (WHG, 65.181.111.160). Odoo.sh is in Dammam (GCP me-central2), and the devices and controller are in KSA.
+  - The RTT from KSA is about 183 ms.
+  - Every relay call opens a new TLS connection to Odoo, so the Odoo leg alone averages 0.6 s for `mobile_get_unpaid_fills`, against about 0.15–0.45 s for a direct page fetch from KSA.
+  - A card sale makes about 9 serialized calls.
+- **Partial deploy:** the code from the 2026-10-15 local commits is live (outages, D29 cache, D28 on), but migrations 000012–000014 are not applied.
+  - `live_settlements` is missing, so `SettledFillFilter::apply` throws and passes Odoo's reply unchanged. D21 and D28 are therefore both inactive.
+  - `cached` relay rows are stored with an empty outcome.
+- **Cron:** the sync cron last ran about 22 h ago, and the collector heartbeat is stale. APP_ENV=dev and APP_DEBUG are on.
+- **Relay, last 24 h:**
+  - register_terminal_sale averaged 1.9 s, with a maximum of 12.8 s and 34 timeouts.
+  - mobile_close_shift averaged 24–47 s, with 5 timeouts at 55 s.
+- **Odoo errors:** `_pts_reclaim_stale_pos_sync_claims` is missing (mobile_retry_failed_pos_syncs), and there is an FTP "421 Too many connections" error.
