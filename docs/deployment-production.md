@@ -119,7 +119,7 @@ both sides equal; never set test prices on a live controller.
 ## 6b. Controller push capture (D30 step 1)
 1. Deploy, then apply migration 000015 (System page → *Apply migrations*). The System page shows
    `PTS_UPLOAD_CAPTURE (D30)`.
-2. Test from anywhere: `curl -s -X POST https://<mediator>/stations/2/upload/test -d '{"Protocol":"jsonPTS","Packets":[{"Id":1,"Type":"Ping"}]}'`
+2. Test from anywhere: `curl -s -X POST https://<mediator>/stations/29/upload/test -d '{"Protocol":"jsonPTS","Packets":[{"Id":1,"Type":"Ping"}]}'`
    should answer `{"Protocol":"jsonPTS","Packets":[{"Id":1,"Type":"Ping","Message":"OK"}]}`.
 3. On the controller (Configuration → Server; done by the user or station admin):
    - **First** press *Set* next to Pump transactions with the *Totally* value (and Alerts, or leave alerts off) so the
