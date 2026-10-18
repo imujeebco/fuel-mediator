@@ -116,6 +116,23 @@ does the same from a shell; `--resend` re-sends unchanged prices, e.g. after a c
 Note: Odoo's own "PTS Full Auto Sync" copies controller prices back into Odoo every ~15 min, so a verified push keeps
 both sides equal; never set test prices on a live controller.
 
+## 6b. Controller push capture (D30 step 1)
+1. Deploy, then apply migration 000015 (System page → *Apply migrations*). The System page shows
+   `PTS_UPLOAD_CAPTURE (D30)`.
+2. Test from anywhere: `curl -s -X POST https://<mediator>/stations/2/upload/test -d '{"Protocol":"jsonPTS","Packets":[{"Id":1,"Type":"Ping"}]}'`
+   should answer `{"Protocol":"jsonPTS","Packets":[{"Id":1,"Type":"Ping","Message":"OK"}]}`.
+3. On the controller (Configuration → Server; done by the user or station admin):
+   - **First** press *Set* next to Pump transactions with the *Totally* value (and Alerts, or leave alerts off) so the
+     backlog is not uploaded.
+   - Server IPv4 `0.0.0.0` and Domain name = the mediator host; protocol HTTPS.
+   - HTTP: switch on *Upload pump transactions* with URI `stations/<backend id>/upload/transactions`. Status
+     (`.../upload/status`, period 1–2 s) and configuration (`.../upload/config`) can follow once transactions look
+     right. Switch WebSocket uploads off (both share the one server setting).
+4. Check: `SELECT received_at, upload_kind, packet_types, auth_kind, auth_user, LEFT(body, 300) FROM pts_uploads ORDER BY id DESC LIMIT 20;`
+   and the controller page's *Uploaded* counter climbing with each fill.
+5. Undo: switch the HTTP uploads off on the controller, or set `PTS_UPLOAD_CAPTURE=0` (answers 404; the controller
+   then keeps its records and retries).
+
 ## 7. Rollback
 - **One device:** set its Odoo URL back to `https://fuelksa.odoo.com` and reload the pump list. Sales queued on the
   device are kept (same uuids) and sent to Odoo directly.

@@ -32,6 +32,17 @@ Transport requirements (from `fuelpay-pts-contract.md`):
 | `SetFuelGradesPrices` | QUEUE | Forwarded to the controller and journaled as a command (D16). | ✅ (mock) |
 | Any other type | DENY | Error packet `"Error":"Not supported by mediator"` | — |
 
+## 1a. Controller upload target: `POST /stations/{backend_config_id}/upload/{kind}` (D30)
+
+Called by the **controller** (remote-server HTTP upload), not by devices. `{kind}` is free text (`[a-z][a-z0-9-]{0,31}`) that names the upload in the capture, e.g. `transactions`, `status`, `config`.
+
+| Aspect | Step 1 behaviour | Validation |
+|---|---|---|
+| Storage | Raw body and headers are saved in `pts_uploads` (Authorization dropped; only the scheme and user name are kept). Bodies over 1 MB get 413 and are not saved. | ✅ (mock) |
+| Reply | `{"Protocol":"jsonPTS","Packets":[{"Id":n,"Type":…,"Message":"OK"}]}`, one per packet. Malformed JSON is saved and answered 400. If the database is down, 503 is returned and the controller re-sends. | ✅ (mock), **reply shape unconfirmed with a real controller** |
+| Unknown backend | 404, nothing saved | ✅ (mock) |
+| Auth | Not checked yet (step 2, after the capture shows what the controller sends) | pending |
+
 ## 2. Odoo-compatible relay: `POST /odoo/jsonrpc`
 
 Transport requirements (from `fuelpay-odoo-contract.md`):

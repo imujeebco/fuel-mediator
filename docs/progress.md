@@ -337,3 +337,9 @@ Double records:
 | Probable | 9 | SAR 100 | 2 cards, RRN …780094 / …780160 (17:20, 17:56) |
 | Probable | 14 | SAR 100 | card 15:40 + OTHER 16:02 |
 | Probable | 18 | SAR 100 | card 21:00 + cash 21:06 |
+
+## D30 step 1: controller push capture (2026-10-18, local commits, awaiting review before push)
+
+- New `POST /stations/{backend}/upload/{kind}` target for the controller's remote-server HTTP upload. It saves the raw request in `pts_uploads` (migration 000015, 72 h retention, Authorization never stored) and acknowledges each packet with `Message: "OK"`. Nothing is derived from the data yet.
+- Next: capture from Station 11 (the controller setting is changed by the user or station admin: correct the uploaded counter first, then point HTTP uploads at the mediator; runbook §6b). Then step 2: check the controller's auth, map `UploadPumpTransaction` → `fill_events` and `UploadStatus` → `pump_status_cache`, use pushed status before reading the controller, dashboard "last push" per station.
+- Open: who owns 146.59.80.155 (the current WebSocket target, status ✗); capture on production or staging; whether pushed fills are added to `mobile_get_unpaid_fills` while Odoo is behind (switch, off by default).
