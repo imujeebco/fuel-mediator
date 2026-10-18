@@ -22,6 +22,10 @@ return [
             Route::post('/stations/{backend:\d+}/jsonPTS')
                 ->action(Web\Pts\JsonPtsAction::class)
                 ->name('pts/jsonpts'),
+            // Controller remote-server HTTP upload (decision D30).
+            Route::post('/stations/{backend:\d+}/upload/{kind:[a-z][a-z0-9-]{0,31}}')
+                ->action(Web\Pts\UploadAction::class)
+                ->name('pts/upload'),
             // Odoo-compatible relay for FuelPay (docs/api-compatibility-matrix.md §2).
             Route::post('/odoo/jsonrpc')
                 ->action(Web\Odoo\JsonRpcRelayAction::class)

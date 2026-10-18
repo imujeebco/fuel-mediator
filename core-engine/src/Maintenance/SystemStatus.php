@@ -80,6 +80,7 @@ final class SystemStatus
         $add('Configuration', 'MEDIATOR_PUBLIC_URL', null, $public === '' ? 'empty: devices keep talking to controllers directly (switch-over not active)' : $public);
         $add('Configuration', 'SETTLED_FILL_FILTER (D21)', null, (string) Environment::get('SETTLED_FILL_FILTER') === '0' ? 'off' : 'on');
         $add('Configuration', 'SETTLED_FILL_LIVE (D28)', null, (string) Environment::get('SETTLED_FILL_LIVE') === '0' ? 'off' : 'on');
+        $add('Configuration', 'PTS_UPLOAD_CAPTURE (D30)', null, (string) Environment::get('PTS_UPLOAD_CAPTURE') === '0' ? 'off' : 'on, kept ' . (int) Environment::get('PTS_UPLOAD_KEEP_HOURS') . ' h');
 
         try {
             $version = (string) $this->db->createCommand('SELECT VERSION()')->queryScalar();

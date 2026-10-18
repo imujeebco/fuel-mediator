@@ -55,6 +55,11 @@ final class Environment
         // Decision D28: a PTS fill paid by a manual sale on the same pump is reported as paid at once. "0" switches it off.
         self::setString('SETTLED_FILL_LIVE', '1');
 
+        // Decision D30: controllers push through their remote-server HTTP upload to /stations/{id}/upload/{kind}.
+        // "0" answers 404 (nothing recorded). Raw captures are kept PTS_UPLOAD_KEEP_HOURS.
+        self::setString('PTS_UPLOAD_CAPTURE', '1');
+        self::setInteger('PTS_UPLOAD_KEEP_HOURS', 72);
+
         // Decision D23: key (32 bytes, base64) for controller passwords read from Odoo and stored encrypted.
         // Generate with `yii secret:generate-key`. Empty = passwords are not stored (env PTS_PASSWORD_<id> only).
         self::setString('MEDIATOR_SECRET_KEY', '');

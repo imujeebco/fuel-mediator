@@ -8,6 +8,7 @@ use App\Odoo\OdooReadClientInterface;
 use App\Odoo\Relay\OdooRelay;
 use App\Odoo\Relay\PumpsRewriter;
 use App\Odoo\Relay\SettledFillFilter;
+use App\Pts\Upload\UploadCapture;
 use App\Reconciliation\LiveSettlements;
 use App\Shared\Crypto\SecretBox;
 use App\Web\Admin\Auth\AdminAuth;
@@ -33,6 +34,11 @@ return [
             'enabled' => (string) Environment::get('SETTLED_FILL_FILTER') !== '0',
             'live' => (string) Environment::get('SETTLED_FILL_LIVE') !== '0' ? Reference::to(LiveSettlements::class) : null,
         ],
+    ],
+
+    // D30 step 1: raw controller uploads are kept PTS_UPLOAD_KEEP_HOURS.
+    UploadCapture::class => [
+        '__construct()' => ['keepHours' => max(1, (int) Environment::get('PTS_UPLOAD_KEEP_HOURS'))],
     ],
 
     // D23: encryption of controller passwords read from Odoo.
