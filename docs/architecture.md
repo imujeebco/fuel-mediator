@@ -65,9 +65,10 @@ Non-goals (for now):
 
 ```
 device → POST /stations/S/jsonPTS [PumpGetStatus × n]
-  → if cache(S, pump) is fresher than freshness_ms (default 1500): answer from cache
+  → if cache(S, pump) is fresher than freshness_ms (default 5000): answer from cache
   → else one gateway call (batched, ≤ 8 packets), update cache, answer
-  → if the controller is unreachable: return the last snapshot ONLY IF younger than stale_ms (default 5000);
+  → if the controller is unreachable: return the last snapshot ONLY IF younger than the stale limit
+    (stale_ms, default 30000, never less than 3 × poll_interval_ms — D31);
     otherwise no packet for that pump (device shows OFFLINE). Stale status is never presented as current.
 ```
 

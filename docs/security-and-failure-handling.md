@@ -40,7 +40,7 @@ Status: Phase 1 design, 2026-10-11. Credential hardening is **deferred (D5)**. T
 | F8 | MySQL unavailable | Connection error | PTS commands are refused (they cannot be journaled). JOURNAL relay methods return a retryable error. PASS relay methods continue. | Execute an unjournaled command |
 | F9 | Digital Pay timeout / unknown outcome | On the device (SDK); visible to the mediator only as a sale observation | Flag APPROVED card sales without an RRN as `payment_unverified` discrepancies | Initiate or repeat a charge (the mediator has no payment path) |
 | F10 | One station offline / slow | Circuit breaker, lease timeouts | Only that station's circuit opens (backoff ≤ 5 min); other stations' leases are unaffected; dashboard shows the station offline | Share a lock or queue across stations |
-| F11 | Stale pump status | `observed_at` older than `stale_ms` | Packet omitted, so the device shows OFFLINE | Return stale status as current |
+| F11 | Stale pump status | `observed_at` older than the stale limit (`stale_ms`, at least 3 × `poll_interval_ms`, D31) | Packet omitted, so the device shows OFFLINE | Return stale status as current |
 | F12 | Cloudflare 403 / controller auth failure | HTTP 403/401 from the gateway | Distinct alert, circuit opens, no retry storm | Forward the challenge to the device |
 | F13 | Meter regression (controller reset/replacement) | Snapshot lower than the previous one | `meter_regression`; the window is excluded from automatic reconciliation | Compute a negative dispensed volume |
 | F14 | Collector gap (mediator or network down) | Snapshot coverage gap | Window marked *incomplete*; meters bracket the gap, so volume-level reconciliation of the bracketing window remains valid | Report the window "clean" |

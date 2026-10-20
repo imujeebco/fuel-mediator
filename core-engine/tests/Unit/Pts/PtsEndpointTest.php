@@ -186,16 +186,31 @@ final class PtsEndpointTest extends Unit
         assertCount(1, $this->transport->requests, 'cold cache: one controller read for both pumps');
         assertCount(2, $first);
 
-        $this->route($this->statusPackets(), '06:50:01.000');
-        assertCount(1, $this->transport->requests, 'within freshness (1.5 s) devices share the cached read');
+        $this->route($this->statusPackets(), '06:50:04.000');
+        assertCount(1, $this->transport->requests, 'within freshness (5 s) devices share the cached read');
 
         $this->transport->queue(new TransportException('timed out', isTimeout: true));
-        $degraded = $this->route($this->statusPackets(), '06:50:04.000');
-        assertCount(2, $degraded, 'controller down: cache younger than stale limit (5 s) still served');
+        $degraded = $this->route($this->statusPackets(), '06:50:20.000');
+        assertCount(2, $degraded, 'controller down: cache younger than stale limit (30 s) still served');
 
         $this->transport->queue(new TransportException('timed out', isTimeout: true));
-        $stale = $this->route($this->statusPackets(), '06:50:30.000', resetCircuit: true);
+        $stale = $this->route($this->statusPackets(), '06:50:40.000', resetCircuit: true);
         assertCount(0, $stale, 'older than stale limit: no packet, so the device shows the pump offline');
+    }
+
+    /** D31: a stale limit shorter than the collector's poll cycle is raised to three polls. */
+    public function testStaleLimitCoversThreeCollectorPolls(): void
+    {
+        $this->db->createCommand()->update('controllers', ['freshness_ms' => 1500, 'stale_ms' => 5000], ['id' => $this->controller->id])->execute();
+        $this->transport->queue(PtsFixture::statusResponder(static fn(int $p): array => PtsFixture::idle($p, 100 + $p, 1000.0 + $p, 5.0, 10.9)));
+        $this->route($this->statusPackets(), '06:50:00.000');
+
+        $this->transport->queue(new TransportException('timed out', isTimeout: true));
+        $busy = $this->route($this->statusPackets(), '06:50:12.000');
+        assertCount(2, $busy, 'stale_ms 5 s with a 10 s poll: last status still served 12 s later (limit 30 s)');
+
+        assertSame(5000, StatusService::staleLimitMs(5000, 0));
+        assertSame(60000, StatusService::staleLimitMs(60000, 10000));
     }
 
     public function testUnknownPumpUnsupportedTypeAndConfigCache(): void

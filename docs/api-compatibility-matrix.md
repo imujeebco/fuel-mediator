@@ -22,7 +22,7 @@ Transport requirements (from `fuelpay-pts-contract.md`):
 
 | Packet type (request) | Mode | Mediator behaviour | Validation |
 |---|---|---|---|
-| `PumpGetStatus` | CACHE | Serve from `pump_status_cache` if younger than `freshness_ms` (1500). Otherwise refresh through the gateway. If the controller is down, serve a snapshot only if it is younger than `stale_ms` (5000), else omit the packet. | ✅ (mock) |
+| `PumpGetStatus` | CACHE | Serve from `pump_status_cache` if younger than `freshness_ms` (5000). Otherwise refresh through the gateway. If the controller is down, serve a snapshot only if it is younger than `stale_ms` (30000, at least 3 × `poll_interval_ms`, D31), else omit the packet. | ✅ (mock) |
 | `GetPumpsConfiguration`, `GetPumpNozzlesConfiguration`, `GetFuelGradesConfiguration` | CACHE (TTL 60 s) | Same keys as the controller. Fuel grades include both `Id/Name` and `FuelGradeId/FuelGradeName/Price`. | pending |
 | `ProbeGetMeasurements` | CACHE (TTL 30 s) | Pass the controller's error packet through when no probes exist (Station 11 has none). | pending |
 | `PumpGetTotals` | CACHE (TTL 5 s) / forward | Also stored as `meter_snapshots` (source `device_totals`). | pending |

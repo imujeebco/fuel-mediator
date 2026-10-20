@@ -18,7 +18,7 @@ Status: Phase 1 design, 2026-10-11. MySQL 8.4, InnoDB, `utf8mb4_0900_ai_ci`.
 | Table | Key columns | Constraints |
 |---|---|---|
 | `stations` | `code`, `name`, `odoo_station_id`, `odoo_company_id`, `mode` (`pts`/`manual`, D9), `utc_offset_minutes`, `active`, `settings` JSON | UNIQUE `odoo_station_id`, UNIQUE `code` |
-| `controllers` | `station_id`, `odoo_backend_config_id`, `name`, `url`, `auth_mode`, `username`, `secret_ref` (credentials deferred, D5; never logged), `verify_ssl`, `enabled`, `poll_interval_ms` (10000), `totals_interval_s` (300), `freshness_ms` (1500), `stale_ms` (5000), `command_timeout_ms` (10000), health columns (`last_ok_at`, `last_error`, `consecutive_failures`, `circuit_open_until`) | UNIQUE `odoo_backend_config_id` |
+| `controllers` | `station_id`, `odoo_backend_config_id`, `name`, `url`, `auth_mode`, `username`, `secret_ref` (credentials deferred, D5; never logged), `verify_ssl`, `enabled`, `poll_interval_ms` (10000), `totals_interval_s` (300), `freshness_ms` (5000), `stale_ms` (30000; D31), `command_timeout_ms` (10000), health columns (`last_ok_at`, `last_error`, `consecutive_failures`, `circuit_open_until`) | UNIQUE `odoo_backend_config_id` |
 | `pumps` | `controller_id`, `pump_number`, `odoo_pump_id` | UNIQUE `(controller_id, pump_number)` |
 | `nozzles` | `pump_id`, `nozzle_number`, `fuel_grade_id`, `fuel_name`, `odoo_nozzle_id` | UNIQUE `(pump_id, nozzle_number)` |
 | `devices` | `station_id` (from the last `mobile_get_pumps`), `terminal_id`, `odoo_uid`, `odoo_login`, `app_version`, `last_ip`, `first_seen_at`, `last_seen_at` | UNIQUE `terminal_id` |

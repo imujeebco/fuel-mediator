@@ -18,18 +18,25 @@ use function array_diff;
 use function array_values;
 use function is_array;
 use function json_decode;
+use function max;
 
 /**
  * Pump status for devices (docs/architecture.md §5.1):
  *  - packets younger than `freshness_ms` are served from `pump_status_cache` (one controller read serves many devices);
  *  - otherwise the pumps are refreshed through the collector (which also records fills), waiting at most
  *    {@see LOCK_WAIT_SECONDS} for the controller so status reads never hold up commands;
- *  - if the controller cannot be read, a cached packet is served only while younger than `stale_ms`; older status is
- *    omitted (the device shows the pump offline). Stale status is never presented as current.
+ *  - if the controller cannot be read, a cached packet is served only while younger than the stale limit; older status
+ *    is omitted (the device shows the pump offline). Stale status is never presented as current.
+ *
+ * The stale limit is `stale_ms`, but never less than {@see STALE_POLL_CYCLES} collector polls (D31): the collector
+ * refreshes the cache only every `poll_interval_ms`, and a slow controller (Station 33: 4–12 s per read through
+ * Cloudflare) keeps the lock for most of that, so a limit shorter than the poll cycle left devices without a status
+ * packet on 38% of polls and every pump flickered offline.
  */
 final class StatusService
 {
     private const LOCK_WAIT_SECONDS = 1.0;
+    private const STALE_POLL_CYCLES = 3;
 
     public function __construct(
         private readonly ConnectionInterface $db,
@@ -47,6 +54,7 @@ final class StatusService
      */
     public function statuses(ControllerEndpoint $controller, array $controllerRow, array $pumps, int $freshnessMs, int $staleMs): array
     {
+        $staleMs = self::staleLimitMs($staleMs, (int) ($controllerRow['poll_interval_ms'] ?? 0));
         $cached = $this->cached($controller->id, $pumps);
         $now = $this->clock->now();
 
@@ -128,6 +136,12 @@ final class StatusService
     {
         return array_values(array_map('intval', (new Query($this->db))->select('pump_number')->from('pumps')
             ->where(['controller_id' => $controllerId, 'on_controller' => 1])->column()));
+    }
+
+    /** The configured stale limit, raised to cover {@see STALE_POLL_CYCLES} collector polls. */
+    public static function staleLimitMs(int $staleMs, int $pollIntervalMs): int
+    {
+        return max($staleMs, self::STALE_POLL_CYCLES * max(0, $pollIntervalMs));
     }
 
     private static function ageMs(DateTimeImmutable $now, string $observedAt): int
